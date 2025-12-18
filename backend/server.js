@@ -83,7 +83,7 @@ const frontendPath = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendPath));
 
 // Diğer tüm istekleri index.html'e yönlendir (React Router için)
-app.get('*', (req, res) => {
+app.get('/.*/', (req, res) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
 });
 // --------------------------------------
