@@ -1,88 +1,92 @@
 const express = require('express');
-const dotenv = require('dotenv');
-const http = require('http'); // YENİ
-const { Server } = require('socket.io'); // YENİ
-
-// 1. ÖNCE BUNU ÇALIŞTIR
-dotenv.config(); 
-
 const mongoose = require('mongoose');
 const cors = require('cors');
+const dotenv = require('dotenv');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path'); // EKLENDİ
+
+dotenv.config();
 
 const app = express();
-const server = http.createServer(app); // YENİ: Express'i HTTP sunucusuna bağladık
+const server = http.createServer(app);
 
-// --- SOCKET.IO AYARLARI (YENİ) ---
-const io = new Server(server, {
-    cors: {
-        origin: "http://localhost:5173", // Frontend adresi (Vite varsayılanı)
-        methods: ["GET", "POST"]
-    }
-});
+// CORS Ayarları (Hem localhost hem de Render adresine izin ver)
+app.use(cors({
+    origin: "*", 
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+}));
 
-// Middleware
 app.use(express.json());
-app.use(cors());
 
-// Veritabanı Bağlantısı
-const connectDB = async () => {
-    try {
-        await mongoose.connect(process.env.MONGO_URI); // options kaldırıldı, yeni sürümde gerek yok
-        console.log('MongoDB Bağlandı 🍃');
-    } catch (err) {
-        console.error('MongoDB Bağlantı Hatası:', err);
-        process.exit(1);
-    }
-};
-connectDB();
+// MongoDB Bağlantısı
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('MongoDB Bağlandı'))
+    .catch(err => console.log(err));
 
 // Rotalar
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/medicines', require('./routes/medicines'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/messages', require('./routes/messages'));
-app.use('/api/admin', require('./routes/admin'));
 app.use('/api/payments', require('./routes/payments'));
+app.use('/api/admin', require('./routes/admin'));
 
-// --- SOCKET.IO OLAYLARI (YENİ) ---
-// --- SOCKET.IO OLAYLARI ---
+// Socket.io Kurulumu
+const io = new Server(server, {
+    cors: {
+        origin: "*", 
+        methods: ["GET", "POST"]
+    }
+});
+
+let onlineUsers = {};
+
 io.on('connection', (socket) => {
     console.log(`Kullanıcı bağlandı: ${socket.id}`);
 
-    // 1. KULLANICI GİRİŞ YAPINCA KENDİ ÖZEL ODASINA KATILSIN
-    // Frontend'den 'register' olayı ile kullanıcı ID'si gelecek
     socket.on('register', (userId) => {
-        if (userId) {
-            socket.join(userId);
-            console.log(`Kullanıcı ID ${userId} kendi özel kanalına katıldı.`);
-        }
+        onlineUsers[userId] = socket.id;
     });
 
-    // 2. TAKAS SOHBET ODASINA KATILMA
     socket.on('join_room', (orderId) => {
         socket.join(orderId);
     });
 
-    // 3. MESAJ GÖNDERME
     socket.on('send_message', (data) => {
-        socket.to(data.orderId).emit('receive_message', data);
+        io.to(data.orderId).emit('receive_message', data);
+        
+        // Bildirim mantığı...
+        // (Burayı kısaltıyorum, senin kodundaki mevcut hali kalsın)
     });
 
-    // 4. BİLDİRİM GÖNDERME (YENİ EKLENDİ) 🔔
-    // Birisi bir işlem yaptığında karşı tarafın ID'sine bildirim atar
-    socket.on('send_notification', (data) => {
-        // data.receiverId: Bildirimin gideceği kişinin ID'si
-        // data.type: 'message', 'order_status' vb.
-        console.log(`Bildirim gönderiliyor -> ${data.receiverId}`);
-        socket.to(data.receiverId).emit('receive_notification', data);
+    socket.on('send_notification', ({ receiverId, type, status }) => {
+        if (onlineUsers[receiverId]) {
+            io.to(onlineUsers[receiverId]).emit('receive_notification', { type, status });
+        }
     });
 
     socket.on('disconnect', () => {
-        console.log('Kullanıcı ayrıldı');
+        // Kullanıcıyı listeden sil
+        Object.keys(onlineUsers).forEach(key => {
+            if (onlineUsers[key] === socket.id) delete onlineUsers[key];
+        });
     });
 });
 
-const PORT = process.env.PORT || 5000;
+// --- KRİTİK EKLEME: FRONTEND SUNUMU ---
+// Frontend build (dist) klasörünün yolu
+const frontendPath = path.join(__dirname, '../frontend/dist');
 
-// ÖNEMLİ: app.listen yerine server.listen kullanıyoruz!
-server.listen(PORT, () => console.log(`Sunucu ${PORT} portunda çalışıyor 🚀`));
+// Statik dosyaları sun
+app.use(express.static(frontendPath));
+
+// Diğer tüm istekleri index.html'e yönlendir (React Router için)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+});
+// --------------------------------------
+
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`Sunucu ${PORT} portunda çalışıyor`));
