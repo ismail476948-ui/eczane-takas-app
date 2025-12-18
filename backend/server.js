@@ -4,14 +4,14 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path'); // EKLENDİ
+const path = require('path'); // Bu satır çok önemli
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 
-// CORS Ayarları (Hem localhost hem de Render adresine izin ver)
+// CORS Ayarları
 app.use(cors({
     origin: "*", 
     methods: ["GET", "POST", "PUT", "DELETE"],
@@ -20,12 +20,12 @@ app.use(cors({
 
 app.use(express.json());
 
-// MongoDB Bağlantısı
+// Veritabanı Bağlantısı
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('MongoDB Bağlandı'))
     .catch(err => console.log(err));
 
-// Rotalar
+// API Rotaları
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/medicines', require('./routes/medicines'));
 app.use('/api/orders', require('./routes/orders'));
@@ -44,7 +44,7 @@ const io = new Server(server, {
 let onlineUsers = {};
 
 io.on('connection', (socket) => {
-    console.log(`Kullanıcı bağlandı: ${socket.id}`);
+    // console.log(`Kullanıcı bağlandı: ${socket.id}`);
 
     socket.on('register', (userId) => {
         onlineUsers[userId] = socket.id;
@@ -56,9 +56,6 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', (data) => {
         io.to(data.orderId).emit('receive_message', data);
-        
-        // Bildirim mantığı...
-        // (Burayı kısaltıyorum, senin kodundaki mevcut hali kalsın)
     });
 
     socket.on('send_notification', ({ receiverId, type, status }) => {
@@ -68,25 +65,28 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        // Kullanıcıyı listeden sil
         Object.keys(onlineUsers).forEach(key => {
             if (onlineUsers[key] === socket.id) delete onlineUsers[key];
         });
     });
 });
 
-// --- KRİTİK EKLEME: FRONTEND SUNUMU ---
-// Frontend build (dist) klasörünün yolu
-const frontendPath = path.join(__dirname, '../frontend/dist');
+// ----------------------------------------------------------------------
+// --- FRONTEND SUNUMU (KESİN ÇÖZÜM) ---
+// ----------------------------------------------------------------------
 
-// Statik dosyaları sun
+// 1. Frontend'in 'dist' klasörünü statik dosya olarak tanıt
+const frontendPath = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendPath));
 
-// Diğer tüm istekleri index.html'e yönlendir (React Router için)
-app.get('/.*/', (req, res) => {
+// 2. API istekleri haricindeki HER ŞEYİ yakala ve index.html gönder
+// DİKKAT: Buraya '*' veya '/' koymadık. 'app.use' doğrudan her şeyi yakalar.
+// Bu sayede "PathError" veya "Missing parameter" hatası çıkması İMKANSIZDIR.
+app.use((req, res) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
 });
-// --------------------------------------
+
+// ----------------------------------------------------------------------
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Sunucu ${PORT} portunda çalışıyor`));
