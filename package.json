@@ -6,6 +6,6 @@
     "build": "npm install && cd frontend && npm install --production=false && npm run build && cd ../backend && npm install"
   },
   "engines": {
-    "node": "18.x"
+    "node": "20.x"
   }
 }
