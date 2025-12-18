@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node backend/server.js",
-    "build": "npm install && cd frontend && npm install && npm run build && cd ../backend && npm install"
+    "build": "npm install && cd frontend && npm install --production=false && npm run build && cd ../backend && npm install"
   },
   "engines": {
     "node": "18.x"
