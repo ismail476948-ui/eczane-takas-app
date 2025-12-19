@@ -1,105 +1,94 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/authMiddleware');
+const auth = require('../middleware/auth');
 const Order = require('../models/Order');
 const Medicine = require('../models/Medicine');
 
-// 1. SİPARİŞ OLUŞTUR
+// Yeni Takas İsteği Oluştur (POST /api/orders)
 router.post('/', auth, async (req, res) => {
+    const { medicineId, quantity } = req.body;
+
     try {
-        const { medicineId, sellerId, quantity } = req.body;
+        // 1. İlaç var mı kontrol et
+        const medicine = await Medicine.findById(medicineId).populate('user');
+        if (!medicine) return res.status(404).json({ message: 'İlaç bulunamadı' });
 
-        // Kendi ilacını alamasın
-        if (sellerId === req.user.id) {
-            return res.status(400).json({ message: "Kendi ilacınızı talep edemezsiniz." });
+        // 2. Kendi ilacını alamazsın
+        if (medicine.user._id.toString() === req.user.id) {
+            return res.status(400).json({ message: 'Kendi ilacınız için takas isteyemezsiniz.' });
         }
 
-        // Stok kontrolü (Opsiyonel ama iyi olur)
-        const medicine = await Medicine.findById(medicineId);
-        if (!medicine || medicine.quantity < quantity) {
-             return res.status(400).json({ message: "Yetersiz stok." });
+        // 3. Stok yeterli mi?
+        if (medicine.quantity < quantity) {
+            return res.status(400).json({ message: 'Yetersiz stok.' });
         }
 
+        // 4. Siparişi oluştur
         const newOrder = new Order({
             buyer: req.user.id,
-            seller: sellerId,
+            seller: medicine.user._id,
             medicine: medicineId,
-            quantity
+            quantity: quantity,
+            status: 'Beklemede'
         });
 
-        const order = await newOrder.save();
-        res.json(order);
+        // 5. İlacın stok adedini düş (Opsiyonel: İstersen sipariş tamamlanınca düşürebilirsin ama hemen düşmek daha güvenli)
+        medicine.quantity -= quantity;
+        await medicine.save();
+
+        await newOrder.save();
+        res.json(newOrder);
+
     } catch (err) {
-        console.error("Sipariş Hatası:", err.message);
-        res.status(500).send('Sunucu Hatası');
+        console.error(err);
+        res.status(500).send('Sunucu hatası');
     }
 });
 
-// 2. TAKASLARI GETİR
+// Kullanıcının Siparişlerini Getir (Hem Alım Hem Satım)
 router.get('/', auth, async (req, res) => {
     try {
         const orders = await Order.find({
             $or: [{ buyer: req.user.id }, { seller: req.user.id }]
         })
-        .populate('medicine', 'name price') // İlaç adı ve FİYATI
-        .populate('buyer', 'username pharmacyName')
-        .populate('seller', 'username pharmacyName')
+        .populate('medicine')
+        .populate('buyer', 'pharmacyName city')
+        .populate('seller', 'pharmacyName city')
         .sort({ createdAt: -1 });
 
         res.json(orders);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Sunucu Hatası');
+        console.error(err);
+        res.status(500).send('Sunucu hatası');
     }
 });
 
-// 3. DURUM GÜNCELLEME (STOK MANTIĞI DEĞİŞTİ)
+// Sipariş Durumu Güncelle (Onay, İptal vs.)
 router.put('/:id', auth, async (req, res) => {
+    const { status, qrCodes } = req.body;
     try {
-        const { status, qrCodes } = req.body;
-        
-        // Siparişi bul
         let order = await Order.findById(req.params.id);
-        if (!order) return res.status(404).json({ msg: 'Sipariş bulunamadı' });
+        if (!order) return res.status(404).json({ message: 'Sipariş bulunamadı' });
 
-        // İlacı bul
-        const medicine = await Medicine.findById(order.medicine);
+        // Durumu güncelle
+        if (status) order.status = status;
+        // Karekod varsa ekle
+        if (qrCodes) order.qrCodes = qrCodes;
 
-        // --- STOK DÜŞME İŞLEMİ (ONAYLANINCA) ---
-        if (status === 'Onaylandı' && order.status === 'Beklemede') {
-            if (!medicine) {
-                return res.status(404).json({ msg: 'İlaç bulunamadı (Silinmiş olabilir)' });
-            }
-            // Stok Yeterli mi?
-            if (medicine.quantity < order.quantity) {
-                return res.status(400).json({ msg: 'Yetersiz stok! İlaç tükenmiş olabilir.' });
-            }
-            
-            // Stoğu Düş
-            medicine.quantity -= order.quantity;
-            await medicine.save();
-        }
-
-        // --- STOK İADE İŞLEMİ (İPTAL EDİLİNCE) ---
-        // Eğer sipariş daha önce onaylandıysa veya transfer aşamasındaysa, stoktan düşülmüş demektir.
-        // İptal edilince stoğu geri vermeliyiz.
-        if (status === 'İptal Edildi' && (order.status === 'Onaylandı' || order.status === 'Transferde')) {
+        // Eğer iptal edildiyse stoğu geri iade et
+        if (status === 'İptal Edildi') {
+            const medicine = await Medicine.findById(order.medicine);
             if (medicine) {
                 medicine.quantity += order.quantity;
                 await medicine.save();
             }
         }
 
-        // Durumu ve varsa Karekodları güncelle
-        order.status = status;
-        if (qrCodes) order.qrCodes = qrCodes;
-        
         await order.save();
         res.json(order);
-
     } catch (err) {
-        console.error("Güncelleme Hatası:", err.message);
-        res.status(500).send('Sunucu Hatası');
+        console.error(err);
+        res.status(500).send('Sunucu hatası');
     }
 });
 

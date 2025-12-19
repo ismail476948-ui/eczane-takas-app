@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const auth = require('../middleware/auth'); // Profil güncellemek için giriş yapmış olmak lazım
 
 // KAYIT OL
 router.post('/register', async (req, res) => {
@@ -12,11 +13,9 @@ router.post('/register', async (req, res) => {
         let user = await User.findOne({ email });
         if (user) return res.status(400).json({ message: 'Bu e-posta zaten kayıtlı.' });
 
-        // Şifreleme
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Veritabanındaki ilk kullanıcı mı?
         const isFirstAccount = (await User.countDocuments({})) === 0;
 
         user = new User({
@@ -24,8 +23,7 @@ router.post('/register', async (req, res) => {
             city,
             email,
             password: hashedPassword,
-            isAdmin: isFirstAccount, // İlk kayıt olan Admin olur
-            // İlk kayıt olan (Admin) otomatik onaylıdır, sonrakiler 'false' (onaysız) başlar
+            isAdmin: isFirstAccount,
             isApproved: isFirstAccount 
         });
 
@@ -54,9 +52,6 @@ router.post('/login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ message: 'Hatalı şifre.' });
 
-        // --- GÜVENLİK KONTROLÜ ---
-        // Eğer kullanıcı Admin DEĞİLSE ve Onayı YOKSA hata ver.
-        // (Yani Adminsen onay kontrolüne takılmazsın)
         if (!user.isAdmin && !user.isApproved) {
             return res.status(403).json({ message: 'Üyeliğiniz henüz yönetici tarafından onaylanmamış.' });
         }
@@ -73,5 +68,33 @@ router.post('/login', async (req, res) => {
         res.status(500).send('Sunucu hatası');
     }
 });
+
+// --- EKLENEN KISIM: PROFİL GÜNCELLEME ---
+router.put('/update', auth, async (req, res) => {
+    const { pharmacyName, city, password } = req.body;
+
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
+
+        // Sadece gelen verileri güncelle
+        if (pharmacyName) user.pharmacyName = pharmacyName;
+        if (city) user.city = city;
+        
+        // Eğer şifre de gönderildiyse onu da güncelle (şifreleyerek)
+        if (password && password.length > 0) {
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(password, salt);
+        }
+
+        await user.save();
+        res.json({ message: 'Profil başarıyla güncellendi', user });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Sunucu hatası');
+    }
+});
+// ----------------------------------------
 
 module.exports = router;
