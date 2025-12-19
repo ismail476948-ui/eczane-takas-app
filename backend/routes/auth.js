@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const auth = require('../middleware/auth'); // Profil güncellemek için giriş yapmış olmak lazım
+const auth = require('../middleware/auth');
 
 // KAYIT OL
 router.post('/register', async (req, res) => {
@@ -60,7 +60,17 @@ router.post('/login', async (req, res) => {
 
         jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
             if (err) throw err;
-            res.json({ token, user: { id: user.id, pharmacyName: user.pharmacyName, isAdmin: user.isAdmin } });
+            // Frontend'e yeni bilgileri de gönderelim (Login olunca lazım olabilir)
+            res.json({ 
+                token, 
+                user: { 
+                    id: user.id, 
+                    pharmacyName: user.pharmacyName, 
+                    isAdmin: user.isAdmin,
+                    pharmacistName: user.pharmacistName, // Yeni
+                    phoneNumber: user.phoneNumber        // Yeni
+                } 
+            });
         });
 
     } catch (err) {
@@ -69,19 +79,23 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// --- EKLENEN KISIM: PROFİL GÜNCELLEME ---
+// PROFİL GÜNCELLEME (YENİ ALANLAR EKLENDİ)
 router.put('/update', auth, async (req, res) => {
-    const { pharmacyName, city, password } = req.body;
+    // Yeni alanları buradan alıyoruz
+    const { pharmacyName, city, password, pharmacistName, address, phoneNumber } = req.body;
 
     try {
         const user = await User.findById(req.user.id);
         if (!user) return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
 
-        // Sadece gelen verileri güncelle
         if (pharmacyName) user.pharmacyName = pharmacyName;
         if (city) user.city = city;
         
-        // Eğer şifre de gönderildiyse onu da güncelle (şifreleyerek)
+        // Yeni Alanlar
+        if (pharmacistName) user.pharmacistName = pharmacistName;
+        if (address) user.address = address;
+        if (phoneNumber) user.phoneNumber = phoneNumber;
+        
         if (password && password.length > 0) {
             const salt = await bcrypt.genSalt(10);
             user.password = await bcrypt.hash(password, salt);
@@ -95,6 +109,5 @@ router.put('/update', auth, async (req, res) => {
         res.status(500).send('Sunucu hatası');
     }
 });
-// ----------------------------------------
 
 module.exports = router;

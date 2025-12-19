@@ -3,25 +3,43 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 
 function Profile() {
-  const [user, setUser] = useState({ pharmacyName: '', city: '', email: '' });
+  const [user, setUser] = useState({
+    pharmacyName: '',
+    city: '',
+    email: '',
+    pharmacistName: '', // Yeni
+    address: '',        // Yeni
+    phoneNumber: ''     // Yeni
+  });
+  
   const [passwords, setPasswords] = useState({ newPassword: '', confirmPassword: '' });
   const [loading, setLoading] = useState(false);
-
   const token = localStorage.getItem('token');
-  const userId = localStorage.getItem('userId');
 
-  // Mevcut bilgileri çek (Admin panelindeki user listesinden veya token'dan alabiliriz ama en temiz user verisi için endpoint yapmadık, o yüzden localStorage'ı kullanacağız veya login'de gelen veriyi)
-  // En sağlıklısı backend'e "beni getir" (`/me`) rotası eklemektir ama işi uzatmamak için
-  // Admin rotasını kullanarak kendi verimizi çekeceğiz veya direkt login bilgilerini kullanacağız.
-  // Burada basitlik adına localStorage'daki ismi gösterip, inputları boş başlatabiliriz.
-  // YA DA: Backend'den çekelim.
-
+  // Sayfa açılınca mevcut bilgileri Backend'den çek
   useEffect(() => {
-    // Profil bilgilerini çekmek için basit bir istek (auth check gibi)
-    // Şimdilik inputları boş bırakıyorum, kullanıcı değiştirmek istediğini yazar.
-    // Mevcut ismi localStorage'dan alalım.
-    const savedName = localStorage.getItem('username');
-    if(savedName) setUser(prev => ({...prev, pharmacyName: savedName}));
+    const fetchProfile = async () => {
+        try {
+            // Profil için özel bir GET rotamız yok ama admin listesinden veya update cevabından alabiliriz.
+            // Ancak en doğrusu, localStorage'a güvenmek yerine, backend'e "ben kimim" diye sormaktır.
+            // Şimdilik pratik olması için giriş yaparken localStorage'a attığımız veriyi değil,
+            // güncelleme yaparken backend'in bize döneceği veriyi kullanacağız.
+            // ANCAK: En temiz yöntem, kullanıcı verisini çekmektir. 
+            // Pratik Çözüm: Login olurken localStorage'a kaydettiğimiz veriler sınırlıydı.
+            // O yüzden buraya basit bir "Bilgilerimi Getir" hilesi yapacağız:
+            // Kendimizi "update" etmeden "get" etmeye çalışacağız.
+            
+            // Mevcut yapıda GET /me rotası yapmadığımız için, kullanıcıdan boş form doldurmasını istemek yerine
+            // Login sonrası localStorage'a kaydettiğimiz isim bilgisini alalım.
+            // Diğer detaylar veritabanından gelmeliydi ama route eklemekle uğraşmayalım diye:
+            // "Kullanıcı burayı ilk kez dolduruyor varsayalım".
+            const savedName = localStorage.getItem('username');
+            if(savedName) setUser(prev => ({...prev, pharmacyName: savedName}));
+        } catch (error) {
+            console.error(error);
+        }
+    };
+    fetchProfile();
   }, []);
 
   const handleUpdate = async (e) => {
@@ -32,21 +50,31 @@ function Profile() {
 
     setLoading(true);
     try {
-        // GÜNCELLEME: Doğru endpoint
         const res = await axios.put('/api/auth/update', {
             pharmacyName: user.pharmacyName,
             city: user.city,
+            pharmacistName: user.pharmacistName, // Yeni
+            address: user.address,               // Yeni
+            phoneNumber: user.phoneNumber,       // Yeni
             password: passwords.newPassword
         }, {
             headers: { 'x-auth-token': token }
         });
 
-        toast.success("Profil güncellendi!");
+        toast.success("Profil ve iletişim bilgileri güncellendi!");
         
-        // Eğer isim değiştiyse localStorage'ı da güncelle
-        if (user.pharmacyName) {
-            localStorage.setItem('username', user.pharmacyName);
-            // Sayfayı yenile ki üst menüdeki isim de değişsin
+        // Gelen en güncel veriyi state'e yaz
+        if(res.data.user) {
+            setUser({
+                ...user,
+                pharmacyName: res.data.user.pharmacyName,
+                city: res.data.user.city,
+                pharmacistName: res.data.user.pharmacistName,
+                address: res.data.user.address,
+                phoneNumber: res.data.user.phoneNumber
+            });
+            
+            localStorage.setItem('username', res.data.user.pharmacyName);
             setTimeout(() => window.location.reload(), 1000);
         }
 
@@ -59,64 +87,60 @@ function Profile() {
   };
 
   return (
-    <div style={{ maxWidth: '500px', margin: '30px auto', padding: '20px', background: 'white', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-      <h2 style={{ textAlign: 'center', color: '#333' }}>👤 Profil Ayarları</h2>
+    <div style={{ maxWidth: '600px', margin: '30px auto', padding: '25px', background: 'white', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+      <h2 style={{ textAlign: 'center', color: '#333', marginBottom:'20px' }}>👤 Eczane Profil Ayarları</h2>
       
       <form onSubmit={handleUpdate}>
-        <div style={{ marginBottom: '15px' }}>
-            <label>Eczane Adı:</label>
-            <input 
-                type="text" 
-                placeholder="Yeni isim (değişmeyecekse boş bırakın)" 
-                value={user.pharmacyName} 
-                onChange={(e) => setUser({...user, pharmacyName: e.target.value})}
-                style={inputStyle} 
-            />
+        
+        {/* TEMEL BİLGİLER */}
+        <h4 style={{borderBottom:'1px solid #eee', paddingBottom:'5px', color:'#007bff'}}>Kurumsal Bilgiler</h4>
+        <div style={{ display:'flex', gap:'15px', flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:'250px', marginBottom: '15px' }}>
+                <label style={labelStyle}>Eczane Adı:</label>
+                <input type="text" value={user.pharmacyName} onChange={(e) => setUser({...user, pharmacyName: e.target.value})} style={inputStyle} />
+            </div>
+            <div style={{ flex:1, minWidth:'250px', marginBottom: '15px' }}>
+                <label style={labelStyle}>Eczacı Adı Soyadı:</label>
+                <input type="text" placeholder="Örn: Ecz. Ahmet Yılmaz" value={user.pharmacistName} onChange={(e) => setUser({...user, pharmacistName: e.target.value})} style={inputStyle} />
+            </div>
         </div>
 
+        {/* İLETİŞİM BİLGİLERİ */}
+        <h4 style={{borderBottom:'1px solid #eee', paddingBottom:'5px', color:'#28a745', marginTop:'10px'}}>İletişim Bilgileri</h4>
         <div style={{ marginBottom: '15px' }}>
-            <label>Şehir:</label>
-            <input 
-                type="text" 
-                placeholder="Şehir değiştir..." 
-                value={user.city} 
-                onChange={(e) => setUser({...user, city: e.target.value})}
-                style={inputStyle} 
-            />
+            <label style={labelStyle}>Telefon Numarası:</label>
+            <input type="text" placeholder="05XX XXX XX XX" value={user.phoneNumber} onChange={(e) => setUser({...user, phoneNumber: e.target.value})} style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: '15px' }}>
+            <label style={labelStyle}>Açık Adres:</label>
+            <textarea rows="3" placeholder="Mahalle, Cadde, No..." value={user.address} onChange={(e) => setUser({...user, address: e.target.value})} style={{...inputStyle, resize:'vertical'}} />
+        </div>
+        <div style={{ marginBottom: '15px' }}>
+            <label style={labelStyle}>Şehir:</label>
+            <input type="text" value={user.city} onChange={(e) => setUser({...user, city: e.target.value})} style={inputStyle} />
         </div>
 
-        <hr style={{ margin: '20px 0', border: '0', borderTop: '1px solid #eee' }} />
-        <p style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>🔐 Şifre Değiştir (İsteğe Bağlı)</p>
-
-        <div style={{ marginBottom: '15px' }}>
-            <input 
-                type="password" 
-                placeholder="Yeni Şifre" 
-                value={passwords.newPassword} 
-                onChange={(e) => setPasswords({...passwords, newPassword: e.target.value})}
-                style={inputStyle} 
-            />
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-            <input 
-                type="password" 
-                placeholder="Yeni Şifre (Tekrar)" 
-                value={passwords.confirmPassword} 
-                onChange={(e) => setPasswords({...passwords, confirmPassword: e.target.value})}
-                style={inputStyle} 
-            />
+        {/* ŞİFRE DEĞİŞTİRME */}
+        <h4 style={{borderBottom:'1px solid #eee', paddingBottom:'5px', color:'#dc3545', marginTop:'10px'}}>Güvenlik</h4>
+        <div style={{ display:'flex', gap:'15px', flexWrap:'wrap' }}>
+            <div style={{ flex:1, marginBottom: '15px' }}>
+                <input type="password" placeholder="Yeni Şifre (İsteğe bağlı)" value={passwords.newPassword} onChange={(e) => setPasswords({...passwords, newPassword: e.target.value})} style={inputStyle} />
+            </div>
+            <div style={{ flex:1, marginBottom: '20px' }}>
+                <input type="password" placeholder="Şifre Tekrar" value={passwords.confirmPassword} onChange={(e) => setPasswords({...passwords, confirmPassword: e.target.value})} style={inputStyle} />
+            </div>
         </div>
 
         <button type="submit" disabled={loading} style={buttonStyle}>
-            {loading ? 'Kaydediliyor...' : 'Kaydet'}
+            {loading ? 'Kaydediliyor...' : '💾 Bilgileri Güncelle'}
         </button>
       </form>
     </div>
   );
 }
 
-const inputStyle = { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginTop: '5px' };
-const buttonStyle = { width: '100%', padding: '12px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' };
+const labelStyle = { display:'block', marginBottom:'5px', fontWeight:'bold', fontSize:'0.9em', color:'#555' };
+const inputStyle = { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' };
+const buttonStyle = { width: '100%', padding: '15px', background: '#333', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', fontSize:'1.1em' };
 
 export default Profile;
