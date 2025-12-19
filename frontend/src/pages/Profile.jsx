@@ -7,40 +7,44 @@ function Profile() {
     pharmacyName: '',
     city: '',
     email: '',
-    pharmacistName: '', // Yeni
-    address: '',        // Yeni
-    phoneNumber: ''     // Yeni
+    pharmacistName: '', 
+    address: '',        
+    phoneNumber: ''     
   });
   
   const [passwords, setPasswords] = useState({ newPassword: '', confirmPassword: '' });
   const [loading, setLoading] = useState(false);
   const token = localStorage.getItem('token');
 
-  // Sayfa açılınca mevcut bilgileri Backend'den çek
+  // SAYFA AÇILINCA BİLGİLERİ GETİR (DÜZELTİLDİ)
   useEffect(() => {
     const fetchProfile = async () => {
         try {
-            // Profil için özel bir GET rotamız yok ama admin listesinden veya update cevabından alabiliriz.
-            // Ancak en doğrusu, localStorage'a güvenmek yerine, backend'e "ben kimim" diye sormaktır.
-            // Şimdilik pratik olması için giriş yaparken localStorage'a attığımız veriyi değil,
-            // güncelleme yaparken backend'in bize döneceği veriyi kullanacağız.
-            // ANCAK: En temiz yöntem, kullanıcı verisini çekmektir. 
-            // Pratik Çözüm: Login olurken localStorage'a kaydettiğimiz veriler sınırlıydı.
-            // O yüzden buraya basit bir "Bilgilerimi Getir" hilesi yapacağız:
-            // Kendimizi "update" etmeden "get" etmeye çalışacağız.
+            // Backend'e "Benim bilgilerimi ver" diyoruz
+            const res = await axios.get('/api/auth/me', {
+                headers: { 'x-auth-token': token }
+            });
             
-            // Mevcut yapıda GET /me rotası yapmadığımız için, kullanıcıdan boş form doldurmasını istemek yerine
-            // Login sonrası localStorage'a kaydettiğimiz isim bilgisini alalım.
-            // Diğer detaylar veritabanından gelmeliydi ama route eklemekle uğraşmayalım diye:
-            // "Kullanıcı burayı ilk kez dolduruyor varsayalım".
-            const savedName = localStorage.getItem('username');
-            if(savedName) setUser(prev => ({...prev, pharmacyName: savedName}));
+            // Gelen verileri kutucuklara dolduruyoruz
+            setUser({
+                pharmacyName: res.data.pharmacyName || '',
+                city: res.data.city || '',
+                email: res.data.email || '',
+                pharmacistName: res.data.pharmacistName || '',
+                address: res.data.address || '',
+                phoneNumber: res.data.phoneNumber || ''
+            });
+
         } catch (error) {
-            console.error(error);
+            console.error("Profil bilgileri çekilemedi:", error);
+            // Token süresi dolmuşsa login'e atabiliriz ama şimdilik sadece loglayalım
         }
     };
-    fetchProfile();
-  }, []);
+
+    if (token) {
+        fetchProfile();
+    }
+  }, [token]);
 
   const handleUpdate = async (e) => {
     e.preventDefault();
@@ -53,9 +57,9 @@ function Profile() {
         const res = await axios.put('/api/auth/update', {
             pharmacyName: user.pharmacyName,
             city: user.city,
-            pharmacistName: user.pharmacistName, // Yeni
-            address: user.address,               // Yeni
-            phoneNumber: user.phoneNumber,       // Yeni
+            pharmacistName: user.pharmacistName,
+            address: user.address,              
+            phoneNumber: user.phoneNumber,      
             password: passwords.newPassword
         }, {
             headers: { 'x-auth-token': token }
@@ -63,18 +67,17 @@ function Profile() {
 
         toast.success("Profil ve iletişim bilgileri güncellendi!");
         
-        // Gelen en güncel veriyi state'e yaz
+        // Güncel veriyi state'e de yazalım ki ekranda hemen görünsün
         if(res.data.user) {
-            setUser({
-                ...user,
-                pharmacyName: res.data.user.pharmacyName,
-                city: res.data.user.city,
-                pharmacistName: res.data.user.pharmacistName,
-                address: res.data.user.address,
-                phoneNumber: res.data.user.phoneNumber
-            });
+            setUser(prev => ({
+                ...prev,
+                ...res.data.user
+            }));
             
+            // Üst menüdeki isim güncellensin diye localStorage'ı yenile
             localStorage.setItem('username', res.data.user.pharmacyName);
+            // Sayfayı yenilemeye gerek yok, React state güncelledi zaten.
+            // Ama üst bar değişsin diye reload atabiliriz.
             setTimeout(() => window.location.reload(), 1000);
         }
 

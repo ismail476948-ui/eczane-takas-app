@@ -60,15 +60,14 @@ router.post('/login', async (req, res) => {
 
         jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
             if (err) throw err;
-            // Frontend'e yeni bilgileri de gönderelim (Login olunca lazım olabilir)
             res.json({ 
                 token, 
                 user: { 
                     id: user.id, 
                     pharmacyName: user.pharmacyName, 
                     isAdmin: user.isAdmin,
-                    pharmacistName: user.pharmacistName, // Yeni
-                    phoneNumber: user.phoneNumber        // Yeni
+                    pharmacistName: user.pharmacistName,
+                    phoneNumber: user.phoneNumber
                 } 
             });
         });
@@ -79,9 +78,20 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// PROFİL GÜNCELLEME (YENİ ALANLAR EKLENDİ)
+// YENİ: KULLANICI BİLGİLERİNİ GETİR (BEN KİMİM?)
+router.get('/me', auth, async (req, res) => {
+    try {
+        // Şifre hariç tüm bilgileri getir
+        const user = await User.findById(req.user.id).select('-password');
+        res.json(user);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Sunucu hatası');
+    }
+});
+
+// PROFİL GÜNCELLEME
 router.put('/update', auth, async (req, res) => {
-    // Yeni alanları buradan alıyoruz
     const { pharmacyName, city, password, pharmacistName, address, phoneNumber } = req.body;
 
     try {
@@ -90,8 +100,6 @@ router.put('/update', auth, async (req, res) => {
 
         if (pharmacyName) user.pharmacyName = pharmacyName;
         if (city) user.city = city;
-        
-        // Yeni Alanlar
         if (pharmacistName) user.pharmacistName = pharmacistName;
         if (address) user.address = address;
         if (phoneNumber) user.phoneNumber = phoneNumber;
