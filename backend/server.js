@@ -6,27 +6,26 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 
-// MODELLER (Bildirim güncellemek için Order modeline ihtiyacımız var)
-const Order = require('./models/Order');
+// Modeller
+const Order = require('./models/Order'); 
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 
-// SOCKET.IO AYARLARI
+// Socket Ayarları
 const io = new Server(server, {
     cors: {
-        origin: "*", // Canlıda ve localde bağlantı sorunu olmasın diye
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
 
-// MIDDLEWARE
 app.use(express.json());
 app.use(cors());
 
-// VERİTABANI BAĞLANTISI
+// DB Bağlantısı
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('MongoDB Bağlandı'))
     .catch(err => console.log(err));
@@ -35,65 +34,34 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/medicines', require('./routes/medicines'));
 app.use('/api/orders', require('./routes/orders'));
-app.use('/api/messages', require('./routes/messages')); // Mesajlaşma rotaları
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/messages', require('./routes/messages')); // <-- YENİ EKLENDİ
 
-// --- SOCKET.IO (CANLI MESAJLAŞMA VE BİLDİRİM) ---
+// --- SOCKET.IO ---
 io.on('connection', (socket) => {
-    // console.log(`Kullanıcı bağlandı: ${socket.id}`);
-
-    // Odaya (Siparişe) katıl
     socket.on('join_room', (orderId) => {
         socket.join(orderId);
     });
 
-    // MESAJ GÖNDERME İŞLEMİ
     socket.on('send_message', async (data) => {
-        // 1. Mesajı odadaki herkese gönder (Frontend'de kendi mesajını filtreleyeceksin)
+        // Canlı mesajı ilet
         io.to(data.orderId).emit('receive_message', data);
-
-        // 2. VERİTABANINDA BİLDİRİMİ GÜNCELLE (KIRMIZI NOKTA İÇİN)
-        try {
-            const order = await Order.findById(data.orderId);
-            
-            if (order) {
-                // Mesajı gönderen kişinin ID'sini alıyoruz
-                // Frontend'den gelen veri yapısı: { sender: { _id: "..." } } olabilir
-                const senderId = data.sender._id || data.sender;
-
-                // Eğer gönderen ALICI ise -> SATICI için okunmadı işaretle
-                if (senderId === order.buyer.toString()) {
-                    order.unreadForSeller = true;
-                } 
-                // Eğer gönderen SATICI ise -> ALICI için okunmadı işaretle
-                else if (senderId === order.seller.toString()) {
-                    order.unreadForBuyer = true;
-                }
-                
-                await order.save();
-            }
-        } catch (err) {
-            console.error("Socket Bildirim Hatası:", err);
-        }
+        
+        // (Veritabanı kaydını zaten routes/messages.js içinde yapıyoruz,
+        // o yüzden burada tekrar DB işlemi yapmaya gerek yok, sadece anlık iletim yeterli)
     });
 
-    // SİPARİŞ DURUM GÜNCELLEMESİ (İsteğe bağlı bildirim)
     socket.on('send_notification', (data) => {
-        // Burada kullanıcıya özel socket ID'si ile bildirim atılabilir
-        // Şimdilik basit tutuyoruz.
-    });
-
-    socket.on('disconnect', () => {
-        // console.log("Kullanıcı ayrıldı");
+        // Özel bildirimler için
     });
 });
 
-// PRODUCTION AYARLARI (RENDER İÇİN)
-// Frontend'i build edip backend içinde sunmak istersen burası çalışır
+// --- PRODUCTION AYARLARI (HATA VEREN KISIM DÜZELTİLDİ) ---
 if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../frontend/dist'))); // Vite build klasörü
+    app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-    app.get('*', (req, res) => {
+    // DÜZELTME: '*' yerine regex kullanıyoruz. Bu sayede hata vermez.
+    app.get(/.*/, (req, res) => {
         res.sendFile(path.resolve(__dirname, '../frontend', 'dist', 'index.html'));
     });
 }

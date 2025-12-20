@@ -1,93 +1,90 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/authMiddleware');
+const auth = require('../middleware/auth');
 const Message = require('../models/Message');
 const Order = require('../models/Order');
 
-// 1. MESAJ GÖNDER
-router.post('/', auth, async (req, res) => {
+// 1. Belirli bir siparişin mesajlarını getir
+router.get('/:orderId', auth, async (req, res) => {
     try {
-        const { orderId, text } = req.body;
+        const messages = await Message.find({ orderId: req.params.orderId })
+            .populate('sender', 'pharmacyName')
+            .sort({ createdAt: 1 });
+        res.json(messages);
+    } catch (err) {
+        res.status(500).send('Server Hatası');
+    }
+});
+
+// 2. Yeni Mesaj Kaydet
+router.post('/', auth, async (req, res) => {
+    const { orderId, text } = req.body;
+    try {
+        // Mesajı kaydet
         const newMessage = new Message({
-            order: orderId,
+            orderId,
             sender: req.user.id,
             text
         });
         await newMessage.save();
-        const populatedMessage = await Message.findById(newMessage._id).populate('sender', 'username pharmacyName');
-        res.json(populatedMessage);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
-// 2. BİR SİPARİŞİN MESAJLARINI GETİR
-router.get('/:orderId', auth, async (req, res) => {
-    try {
-        const messages = await Message.find({ order: req.params.orderId })
-            .populate('sender', 'username pharmacyName')
-            .sort({ createdAt: 1 });
-        res.json(messages);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// 3. (YENİ) OKUNMAMIŞ MESAJ SAYILARINI GETİR
-router.get('/unread/count', auth, async (req, res) => {
-    try {
-        // Benim dahil olduğum siparişleri bul
-        const myOrders = await Order.find({
-            $or: [{ buyer: req.user.id }, { seller: req.user.id }]
-        }).select('_id');
-
-        const orderIds = myOrders.map(o => o._id);
-
-        // Bu siparişlerdeki, GÖNDERENİ BEN OLMAYAN ve OKUNMAMIŞ mesajları say
-        const unreadMessages = await Message.aggregate([
-            { 
-                $match: { 
-                    order: { $in: orderIds },
-                    sender: { $ne: req.user._id }, // Ben göndermediysem
-                    isRead: false // Ve okunmadıysa
-                } 
-            },
-            {
-                $group: {
-                    _id: "$order", // Sipariş bazında grupla
-                    count: { $sum: 1 } // Say
-                }
+        // Siparişteki bildirim ışığını yak (Order modelini güncelle)
+        const order = await Order.findById(orderId);
+        if(order) {
+            if(req.user.id === order.buyer.toString()) {
+                order.unreadForSeller = true; // Alıcı attıysa satıcıya bildirim
+            } else {
+                order.unreadForBuyer = true;  // Satıcı attıysa alıcıya bildirim
             }
-        ]);
+            await order.save();
+        }
 
-        // Frontend'in kolay okuması için objeye çevir: { "siparisId": 5, "siparisId2": 1 }
-        let counts = {};
-        unreadMessages.forEach(item => {
-            counts[item._id] = item.count;
-        });
-
-        res.json(counts);
+        res.json(newMessage);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: err.message });
+        res.status(500).send('Server Hatası');
     }
 });
 
-// 4. (YENİ) MESAJLARI OKUNDU İŞARETLE
+// 3. Okunmadı Sayılarını Getir (Kırmızı noktalar için)
+router.get('/unread/count', auth, async (req, res) => {
+    try {
+        // Kullanıcının dahil olduğu siparişleri bul
+        const orders = await Order.find({
+            $or: [{ buyer: req.user.id }, { seller: req.user.id }]
+        });
+
+        const unreadCounts = {};
+        
+        orders.forEach(order => {
+            const isBuyer = order.buyer.toString() === req.user.id;
+            // Eğer alıcıysam ve alıcı bildirimi varsa VEYA satıcıysam ve satıcı bildirimi varsa
+            if ((isBuyer && order.unreadForBuyer) || (!isBuyer && order.unreadForSeller)) {
+                unreadCounts[order._id] = 1; // 1 tane bildirim var işareti
+            }
+        });
+
+        res.json(unreadCounts);
+    } catch (err) {
+        res.status(500).send('Server Hatası');
+    }
+});
+
+// 4. Mesajları Okundu Olarak İşaretle
 router.put('/read/:orderId', auth, async (req, res) => {
     try {
-        // Bu siparişteki, bana gelen tüm mesajları okundu yap
-        await Message.updateMany(
-            { 
-                order: req.params.orderId,
-                sender: { $ne: req.user.id },
-                isRead: false
-            },
-            { $set: { isRead: true } }
-        );
+        const order = await Order.findById(req.params.orderId);
+        if(!order) return res.status(404).send('Sipariş bulunamadı');
+
+        if(req.user.id === order.buyer.toString()) {
+            order.unreadForBuyer = false;
+        } else {
+            order.unreadForSeller = false;
+        }
+        await order.save();
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).send('Server Hatası');
     }
 });
 

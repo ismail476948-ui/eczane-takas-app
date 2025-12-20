@@ -1,27 +1,27 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import io from 'socket.io-client';
+import io from 'socket.io-client'; 
 
-const socket = io.connect();
+const socket = io.connect(); 
 
 function Exchanges({ onPageLoad }) {
   const [orders, setOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [unreadCounts, setUnreadCounts] = useState({});
+  const [unreadCounts, setUnreadCounts] = useState({}); 
 
   // Filtreler
   const [filters, setFilters] = useState({
-    incoming: true, outgoing: true,
-    active: true, completed: true, cancelled: false
+    incoming: true,  outgoing: true,
+    active: true,    completed: true, cancelled: false
   });
 
   // Modallar
   const [showScanModal, setShowScanModal] = useState(false);
-  const [scanOrderId, setScanOrderId] = useState(null);
+  const [scanOrderId, setScanOrderId] = useState(null); 
   const [qrText, setQrText] = useState("");
   const [showViewQRModal, setShowViewQRModal] = useState(false);
-  const [viewQRCodes, setViewQRCodes] = useState([]);
-
+  const [viewQRCodes, setViewQRCodes] = useState([]); 
+  
   // CHAT
   const [showChatModal, setShowChatModal] = useState(false);
   const [chatOrderId, setChatOrderId] = useState(null);
@@ -32,24 +32,18 @@ function Exchanges({ onPageLoad }) {
   const token = localStorage.getItem('token');
   const currentUserId = localStorage.getItem('userId');
 
-  // --- VERİ ÇEKME ---
   const fetchData = async () => {
     try {
-      // Siparişleri çek
       const resOrders = await axios.get('/api/orders', {
         headers: { 'x-auth-token': token }
       });
       setOrders(resOrders.data);
-
-      // Bildirimleri Hesapla (Backend'den gelen order verisinden)
-      const counts = {};
-      resOrders.data.forEach(order => {
-        const isBuyer = order.buyer._id === currentUserId;
-        const hasNotif = isBuyer ? order.unreadForBuyer : order.unreadForSeller;
-        if (hasNotif) counts[order._id] = 1; // Varsa 1 yaz (veya backend sayı dönüyorsa sayı)
+      
+      // Okunmamış mesaj sayılarını getir
+      const resUnread = await axios.get('/api/messages/unread/count', {
+        headers: { 'x-auth-token': token }
       });
-      setUnreadCounts(counts);
-
+      setUnreadCounts(resUnread.data);
     } catch (error) {
       console.error(error);
     }
@@ -59,34 +53,25 @@ function Exchanges({ onPageLoad }) {
     fetchData();
     if (onPageLoad) onPageLoad();
 
-    // --- DÜZELTME 1: Çift Mesaj Engelleme ---
+    // Socket Dinleyicisi
     socket.on("receive_message", (data) => {
-      // Gelen mesajı ben mi attım? Kontrol et.
-      const senderId = data.sender._id || data.sender; // Yapıya göre değişebilir diye garantiye alıyoruz
-      
-      // Eğer mesajı BEN attıysam listeye ekleme (Çünkü handleSendMessage zaten ekledi)
-      if (senderId === currentUserId) return;
+        // Eğer mesajı ben attıysam (sender._id veya sender) listeye ekleme
+        const senderId = data.sender._id || data.sender;
+        if (senderId === currentUserId) return;
 
-      // Eğer mesaj şu an açık olan sohbet penceresine aitse listeye ekle
-      // (Burada chatOrderId state'ine erişemeyebiliriz, o yüzden callback kullanıyoruz)
-      setChatMessages((prev) => {
-         // Eğer sohbet açık değilse, bu kod çalışsa bile kullanıcı görmez.
-         // Ama asıl önemli olan, mesajın listeye çift girmemesi.
-         return [...prev, data];
-      });
-      
-      // Canlı Bildirim Güncellemesi (Chat açık değilse kırmızıyı yak)
-      setUnreadCounts(prev => {
-          // Eğer chat açık değilse veya açık olan chat bu siparişe ait değilse
-          // (Not: State closure sorunu yaşamamak için basit mantık kuruyoruz)
-          return { ...prev, [data.orderId]: 1 };
-      });
+        // Mesaj şu an açık olan sohbetin mesajıysa ekle
+        setChatMessages((prev) => [...prev, data]);
+        
+        // Bildirimleri güncelle (eğer sohbet açık değilse)
+        if (data.orderId !== chatOrderId) {
+             fetchData(); // Listeyi yenile ki kırmızı nokta gelsin
+        }
     });
 
     return () => {
-      socket.off("receive_message");
+        socket.off("receive_message");
     };
-  }, []); // Dependency array boş
+  }, [chatOrderId]); // chatOrderId değişince listener güncellensin
 
   const handleFilterChange = (e) => {
     setFilters({ ...filters, [e.target.name]: e.target.checked });
@@ -104,12 +89,11 @@ function Exchanges({ onPageLoad }) {
       if(currentOrder) {
         const isMeSeller = currentOrder.seller._id === currentUserId;
         const targetUserId = isMeSeller ? currentOrder.buyer._id : currentOrder.seller._id;
-        // Bildirim tipini düzelttik
+        // Basit bildirim
         socket.emit('send_message', { 
-             orderId: orderId, 
-             text: `Sipariş durumu güncellendi: ${newStatus}`, 
-             sender: { _id: currentUserId },
-             isSystem: true // Sistem mesajı olduğunu belirtmek için
+            orderId: orderId, 
+            text: `Sipariş durumu: ${newStatus}`, 
+            sender: { _id: currentUserId } 
         });
       }
 
@@ -118,56 +102,49 @@ function Exchanges({ onPageLoad }) {
     } catch (error) { alert("Hata oluştu"); }
   };
 
-  // --- SOHBET AÇMA (BİLDİRİM SİLME) ---
+  // --- SOHBET ---
   const handleOpenChat = async (orderId, partnerName) => {
-    setChatOrderId(orderId);
-    setChatPartnerName(partnerName);
-    setChatMessages([]);
+    setChatOrderId(orderId); 
+    setChatPartnerName(partnerName); 
+    setChatMessages([]); 
     setShowChatModal(true);
 
     socket.emit("join_room", orderId);
 
     try {
-      // 1. Mesaj geçmişini çek (API rotan buysa)
-      // Eğer /api/messages/:id yoksa ve mesajları Order içinde tutmuyorsak burası hata verebilir.
-      // Senin kodunda bu vardı, o yüzden bıraktım.
-      const res = await axios.get(`/api/messages/${orderId}`, { headers: { 'x-auth-token': token } });
-      setChatMessages(res.data);
-      
-      // 2. --- DÜZELTME 2: Okundu Bilgisini Gönder ---
-      // Backend'de "/api/orders/:id/mark-read" rotasını oluşturmuştuk. Onu kullanıyoruz.
-      await axios.put(`/api/orders/${orderId}/mark-read`, {}, { 
-          headers: { 'x-auth-token': token } 
-      });
-
-      // 3. Kırmızı noktayı yerel olarak sil
-      setUnreadCounts(prev => ({ ...prev, [orderId]: 0 }));
-      
-    } catch (error) { console.error("Sohbet yüklenemedi (API hatası olabilir)"); }
+        // Mesaj geçmişini çek
+        const res = await axios.get(`/api/messages/${orderId}`, { headers: { 'x-auth-token': token } });
+        setChatMessages(res.data);
+        
+        // Okundu olarak işaretle
+        await axios.put(`/api/messages/read/${orderId}`, {}, { headers: { 'x-auth-token': token } });
+        
+        // Kırmızı noktayı yerel olarak sil
+        setUnreadCounts(prev => ({ ...prev, [orderId]: 0 }));
+    } catch (error) { console.error("Sohbet hatası"); }
   };
 
-  // --- MESAJ GÖNDERME ---
   const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if(!newMessage.trim()) return;
 
     const messageData = {
-      orderId: chatOrderId,
-      text: newMessage,
-      sender: { _id: currentUserId }, // Senin yapın böyle
-      createdAt: new Date().toISOString()
+        orderId: chatOrderId,
+        text: newMessage,
+        sender: { _id: currentUserId }, // UI için geçici obje
+        createdAt: new Date().toISOString()
     };
 
     try {
-      // 1. Önce ekrana bas (Hız hissi için)
-      setChatMessages((prev) => [...prev, messageData]);
-      setNewMessage("");
+        // 1. Önce ekrana bas
+        setChatMessages((prev) => [...prev, messageData]);
+        setNewMessage("");
 
-      // 2. Veritabanına kaydet
-      await axios.post('/api/messages', { orderId: chatOrderId, text: newMessage }, { headers: { 'x-auth-token': token } });
-      
-      // 3. Socket ile gönder
-      socket.emit("send_message", messageData);
-      
+        // 2. Veritabanına kaydet
+        const res = await axios.post('/api/messages', { orderId: chatOrderId, text: newMessage }, { headers: { 'x-auth-token': token } });
+        
+        // 3. Socket ile gönder (Backend'den dönen tam veriyi yollamak daha sağlıklı)
+        socket.emit("send_message", { ...messageData, ...res.data });
+        
     } catch (error) { alert("Mesaj gönderilemedi."); }
   };
 
@@ -233,8 +210,6 @@ function Exchanges({ onPageLoad }) {
           const unitPrice = order.medicine?.price || 0;
           const statusColor = isSeller ? '#28a745' : '#dc3545';
           const partnerName = isSeller ? order.buyer?.pharmacyName : order.seller?.pharmacyName;
-          
-          // Bildirim Sayısı (State'den alıyoruz)
           const unreadCount = unreadCounts[order._id] || 0;
 
           return (
@@ -249,7 +224,7 @@ function Exchanges({ onPageLoad }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '15px' }}>
                 <button onClick={() => handleOpenChat(order._id, partnerName)} style={{ background: '#007bff', color: 'white', padding: '10px 15px', border: 'none', borderRadius: '5px', cursor: 'pointer', position: 'relative' }}>
                     💬 Mesajlaş
-                    {unreadCount > 0 && <span style={{ position: 'absolute', top: '-10px', right: '-10px', background: 'red', color: 'white', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '0.8em', fontWeight: 'bold' }}>!</span>}
+                    {unreadCount > 0 && <span style={{ position: 'absolute', top: '-10px', right: '-10px', background: 'red', color: 'white', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '0.8em', fontWeight: 'bold' }}>{unreadCount}</span>}
                 </button>
                 {order.qrCodes?.length > 0 && <button onClick={() => handleOpenViewQR(order.qrCodes)} style={{ background: '#6f42c1', color: 'white', padding: '10px', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>📦 Karekodlar</button>}
                 {isSeller && order.status === 'Beklemede' && <button onClick={() => updateStatus(order._id, 'Onaylandı')} style={{ background: '#28a745', color: 'white', padding: '10px', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>✅ Onayla</button>}
@@ -293,24 +268,18 @@ function Exchanges({ onPageLoad }) {
         </div>
       )}
 
-      {/* --- KAREKOD OKUTMA MODALI (SAYAÇLI) --- */}
+      {/* KAREKOD MODALLARI (Değişmedi, yer tasarrufu için kısalttım ama senin kodunda kalabilir) */}
       {showScanModal && (
         <div style={modalOverlayStyle}>
              <div style={modalContentStyle}>
                 <h2>📸 Karekodları Okutun</h2>
                 <textarea 
-                    autoFocus 
-                    value={qrText} 
-                    onChange={(e) => setQrText(e.target.value)} 
-                    rows={10} 
-                    style={textAreaStyle} 
+                    autoFocus value={qrText} onChange={(e) => setQrText(e.target.value)} rows={10} style={textAreaStyle} 
                     placeholder="Her satıra bir karekod gelecek şekilde okutun..."
                 />
-                
                 <div style={{ textAlign: 'right', fontSize: '0.9em', color: '#007bff', marginTop: '5px', fontWeight: 'bold' }}>
                     Okunan Karekod Sayısı: {qrText.split('\n').filter(l => l.trim() !== '').length}
                 </div>
-                
                 <div style={{display:'flex', gap:'10px', marginTop:'15px'}}>
                    <button onClick={() => setShowScanModal(false)} style={cancelBtnStyle}>İptal</button>
                    <button onClick={handleSubmitQR} style={confirmBtnStyle}>Onayla</button>
@@ -319,7 +288,6 @@ function Exchanges({ onPageLoad }) {
         </div>
       )}
 
-      {/* --- KAREKOD İZLEME MODALI (SAYAÇLI) --- */}
       {showViewQRModal && (
          <div style={modalOverlayStyle}>
              <div style={modalContentStyle}>
@@ -327,11 +295,9 @@ function Exchanges({ onPageLoad }) {
                  <div style={{maxHeight:'300px', overflowY:'auto', background:'#f9f9f9', padding:'10px', border:'1px solid #eee', borderRadius:'5px'}}>
                     {viewQRCodes.map((c,i) => <div key={i} style={{borderBottom:'1px solid #eee', padding:'2px 0'}}>{c}</div>)}
                  </div>
-
                  <div style={{ textAlign: 'right', fontSize: '0.9em', color: '#6f42c1', marginTop: '10px', fontWeight: 'bold' }}>
                     Toplam Adet: {viewQRCodes.length}
                  </div>
-
                  <div style={{display:'flex', gap:'10px', marginTop:'15px'}}>
                     <button onClick={handleCopyQRCodes} style={confirmBtnStyle}>Kopyala</button>
                     <button onClick={() => setShowViewQRModal(false)} style={cancelBtnStyle}>Kapat</button>
