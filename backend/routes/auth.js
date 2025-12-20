@@ -7,14 +7,14 @@ const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
-// --- BREVO (SENDINBLUE) MAİL AYARLARI ---
+// --- BREVO (SENDINBLUE) - PORT 2525 (Yedek Kapı) ---
 const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com', // Brevo sunucusu
-    port: 587, // Standart port
-    secure: false, // 587 için false
+    host: 'smtp-relay.brevo.com',
+    port: 2525, // <-- DİKKAT: Port 2525 yapıldı (Render bunu engellemez)
+    secure: false, 
     auth: {
-        user: process.env.EMAIL_USER, // Render'da güncellediğin Brevo kullanıcısı
-        pass: process.env.EMAIL_PASS  // Render'da güncellediğin Brevo Key
+        user: process.env.EMAIL_USER, 
+        pass: process.env.EMAIL_PASS
     },
     tls: {
         rejectUnauthorized: false
@@ -24,12 +24,12 @@ const transporter = nodemailer.createTransport({
 // Bağlantı Testi
 transporter.verify((error, success) => {
     if (error) {
-        console.log("Mail Sunucusu Hatası:", error);
+        console.log("Mail Hatası (Port 2525):", error);
     } else {
-        console.log("✅ Brevo Mail Sunucusu Bağlandı!");
+        console.log("✅ Brevo Sunucusu (Port 2525) Bağlandı!");
     }
 });
-// ----------------------------------------
+// ---------------------------------------------------
 
 // KAYIT OL
 router.post('/register', async (req, res) => {
@@ -120,9 +120,8 @@ router.post('/forgot-password', async (req, res) => {
 
         const resetUrl = `https://${req.get('host')}/reset-password/${token}`; 
 
-        // Brevo için "From" kısmı kayıtlı olduğun mail adresi olmalıdır
         const mailOptions = {
-            from: process.env.EMAIL_USER, // Brevo'daki kayıtlı mailin
+            from: process.env.EMAIL_USER,
             to: user.email,
             subject: 'Eczane Takas - Şifre Sıfırlama',
             text: `Şifrenizi sıfırlamak için lütfen aşağıdaki linke tıklayın:\n\n${resetUrl}\n\nBu işlemi siz yapmadıysanız dikkate almayın.`
