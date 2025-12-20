@@ -19,6 +19,7 @@ function AdminUsers() {
     fetchUsers();
   }, []);
 
+  // KULLANICI ONAYLA
   const handleApprove = async (id) => {
     if(window.confirm("Bu kullanıcıyı onaylamak istiyor musunuz?")) {
         try {
@@ -31,6 +32,7 @@ function AdminUsers() {
     }
   };
 
+  // KULLANICI SİL
   const handleDelete = async (id) => {
     if(window.confirm("Kullanıcıyı silmek istediğinize emin misiniz?")) {
         try {
@@ -40,6 +42,25 @@ function AdminUsers() {
         } catch (error) {
             toast.error("Hata oluştu.");
         }
+    }
+  };
+
+  // --- YENİ: ŞİFRE SIFIRLA ---
+  const handleResetPassword = async (user) => {
+    // Tarayıcının standart penceresiyle yeni şifreyi soralım
+    const newPassword = window.prompt(`${user.pharmacyName} kullanıcısı için YENİ şifreyi girin:`);
+
+    if (newPassword === null) return; // İptal ederse çık
+    if (newPassword.length < 6) return toast.warning("Şifre en az 6 karakter olmalı.");
+
+    try {
+        await axios.put(`/api/admin/users/reset-password/${user._id}`, 
+            { newPassword }, 
+            { headers: { 'x-auth-token': token } }
+        );
+        toast.success(`Şifre başarıyla değiştirildi: ${newPassword}`);
+    } catch (error) {
+        toast.error("Şifre değiştirilemedi.");
     }
   };
 
@@ -70,13 +91,21 @@ function AdminUsers() {
                                 <span style={{ color: '#ffc107', fontWeight: 'bold' }}>⏳ Bekliyor</span>
                             )}
                         </td>
-                        <td style={{ padding: '10px' }}>
+                        <td style={{ padding: '10px', display:'flex', justifyContent:'center', gap:'5px' }}>
+                            {/* ONAY BUTONU */}
                             {!user.isApproved && (
-                                <button onClick={() => handleApprove(user._id)} style={{ background: '#28a745', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', marginRight: '5px', cursor: 'pointer' }}>
+                                <button onClick={() => handleApprove(user._id)} style={btnStyle('#28a745')}>
                                     Onayla
                                 </button>
                             )}
-                            <button onClick={() => handleDelete(user._id)} style={{ background: '#dc3545', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer' }}>
+                            
+                            {/* ŞİFRE SIFIRLA BUTONU (YENİ) */}
+                            <button onClick={() => handleResetPassword(user)} style={btnStyle('#17a2b8')}>
+                                🔑 Şifre
+                            </button>
+
+                            {/* SİL BUTONU */}
+                            <button onClick={() => handleDelete(user._id)} style={btnStyle('#dc3545')}>
                                 Sil
                             </button>
                         </td>
@@ -88,5 +117,16 @@ function AdminUsers() {
     </div>
   );
 }
+
+// Buton stili (Tekrarı önlemek için fonksiyon yaptım)
+const btnStyle = (bgColor) => ({
+    background: bgColor,
+    color: 'white',
+    border: 'none',
+    padding: '5px 10px',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    fontSize: '0.9em'
+});
 
 export default AdminUsers;
