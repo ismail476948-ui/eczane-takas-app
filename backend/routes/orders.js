@@ -92,4 +92,25 @@ router.put('/:id', auth, async (req, res) => {
     }
 });
 
+// YENİ: SİPARİŞİN MESAJLARINI OKUNDU OLARAK İŞARETLE
+router.put('/:id/mark-read', auth, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) return res.status(404).json({ message: 'Sipariş bulunamadı' });
+
+        // İsteği yapan kişi Alıcı mı Satıcı mı?
+        if (req.user.id === order.buyer.toString()) {
+            order.unreadForBuyer = false; // Alıcı okudu
+        } else if (req.user.id === order.seller.toString()) {
+            order.unreadForSeller = false; // Satıcı okudu
+        }
+
+        await order.save();
+        res.json(order);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Sunucu hatası');
+    }
+});
+
 module.exports = router;
