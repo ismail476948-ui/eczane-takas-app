@@ -1,85 +1,67 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { useNavigate } from 'react-router-dom';
 
 function AdminMedicines() {
   const [medicines, setMedicines] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-
   const token = localStorage.getItem('token');
-  const isAdmin = localStorage.getItem('isAdmin') === 'true';
 
-  // İlaçları Çek
-  useEffect(() => {
-    if (!token || !isAdmin) {
-        navigate('/');
-        return;
+  const fetchMedicines = async () => {
+    try {
+      // Admin için özel rota yoksa genel rotayı kullanabiliriz
+      // Veya admin rotası yazabiliriz. Şimdilik genel rotadan çekip hepsini gösterelim.
+      const res = await axios.get('/api/medicines'); 
+      setMedicines(res.data);
+    } catch (error) {
+      console.error(error);
     }
+  };
 
-    const fetchMedicines = async () => {
-      try {
-        const res = await axios.get('/api/admin/medicines', {
-            headers: { 'x-auth-token': token }
-        });
-        setMedicines(res.data);
-        setLoading(false);
-      } catch (error) {
-        toast.error("İlaçlar yüklenemedi.");
-        setLoading(false);
-      }
-    };
+  useEffect(() => {
     fetchMedicines();
-  }, [token, isAdmin, navigate]);
+  }, []);
 
-  // İlaç Silme Fonksiyonu
-  const handleDeleteMedicine = async (id, name) => {
-    if (window.confirm(`'${name}' ilanı sistemden silinecek. Emin misiniz?`)) {
+  const handleDelete = async (id) => {
+    if(window.confirm("Bu ilacı sistemden tamamen silmek istediğinize emin misiniz?")) {
         try {
-            await axios.delete(`/api/admin/medicines/${id}`, {
-                headers: { 'x-auth-token': token }
+            // Admin yetkisiyle silme (Admin rotasına istek atıyoruz)
+            await axios.delete(`/api/medicines/${id}`, { 
+                headers: { 'x-auth-token': token } 
             });
             toast.success("İlaç silindi.");
-            // Listeden çıkar
-            setMedicines(medicines.filter(med => med._id !== id));
+            fetchMedicines();
         } catch (error) {
-            toast.error("Silme işlemi başarısız.");
+            toast.error("Silme işlemi başarısız (Yetkiniz olmayabilir).");
         }
     }
   };
 
-  if (loading) return <div style={{textAlign:'center', marginTop:'50px'}}>Yükleniyor...</div>;
-
   return (
     <div>
-      <h2 style={{ textAlign: 'center', color: '#333', marginBottom: '20px' }}>💊 İlaç Yönetimi</h2>
-      
-      <div style={{ overflowX: 'auto', background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <h2 style={{ textAlign: 'center', color: '#333' }}>💊 İlaç Yönetimi</h2>
+      <div style={{ overflowX: 'auto', marginTop: '20px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
             <thead>
-                <tr style={{ background: '#f8f9fa', textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                    <th style={thStyle}>İlaç Adı</th>
-                    <th style={thStyle}>Eczane</th>
-                    <th style={thStyle}>Adet</th>
-                    <th style={thStyle}>Fiyat</th>
-                    <th style={thStyle}>SKT</th>
-                    <th style={thStyle}>İşlem</th>
+                <tr style={{ background: '#333', color: 'white' }}>
+                    <th style={{ padding: '10px' }}>İlaç Adı</th>
+                    <th style={{ padding: '10px' }}>Eczane</th>
+                    <th style={{ padding: '10px' }}>Stok</th>
+                    <th style={{ padding: '10px' }}>Fiyat</th>
+                    <th style={{ padding: '10px' }}>SKT</th>
+                    <th style={{ padding: '10px' }}>İşlem</th>
                 </tr>
             </thead>
             <tbody>
                 {medicines.map(med => (
-                    <tr key={med._id} style={{ borderBottom: '1px solid #eee' }}>
-                        <td style={tdStyle}><strong>{med.name}</strong></td>
-                        <td style={tdStyle}>{med.user?.pharmacyName || <span style={{color:'red'}}>Silinmiş Eczane</span>}</td>
-                        <td style={tdStyle}>{med.quantity}</td>
-                        <td style={tdStyle}>{med.price} ₺</td>
-                        <td style={tdStyle}>{new Date(med.expiryDate).toLocaleDateString()}</td>
-                        <td style={tdStyle}>
-                            <button 
-                                onClick={() => handleDeleteMedicine(med._id, med.name)}
-                                style={{ background: '#dc3545', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '5px', cursor: 'pointer' }}>
-                                🗑 Kaldır
+                    <tr key={med._id} style={{ borderBottom: '1px solid #ddd', textAlign: 'center' }}>
+                        <td style={{ padding: '10px', color: '#007bff', fontWeight: 'bold' }}>{med.name}</td>
+                        <td style={{ padding: '10px' }}>{med.user?.pharmacyName || 'Bilinmiyor'}</td>
+                        <td style={{ padding: '10px' }}>{med.quantity}</td>
+                        <td style={{ padding: '10px' }}>{med.price} ₺</td>
+                        <td style={{ padding: '10px' }}>{new Date(med.expiryDate).toLocaleDateString()}</td>
+                        <td style={{ padding: '10px' }}>
+                            <button onClick={() => handleDelete(med._id)} style={{ background: '#dc3545', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer' }}>
+                                🗑 Sil
                             </button>
                         </td>
                     </tr>
@@ -87,15 +69,8 @@ function AdminMedicines() {
             </tbody>
         </table>
       </div>
-      
-      <div style={{marginTop:'20px', textAlign:'center'}}>
-        <button onClick={() => navigate('/admin')} style={{background:'#333', color:'white', border:'none', padding:'10px 20px', borderRadius:'5px', cursor:'pointer'}}>🔙 Panele Dön</button>
-      </div>
     </div>
   );
 }
-
-const thStyle = { padding: '12px', color: '#555' };
-const tdStyle = { padding: '12px', color: '#333' };
 
 export default AdminMedicines;

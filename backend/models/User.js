@@ -6,13 +6,17 @@ const UserSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     
-    // YENİ EKLENEN ALANLAR
-    pharmacistName: { type: String, default: '' }, // Eczacı Adı Soyadı
-    address: { type: String, default: '' },        // Açık Adres
-    phoneNumber: { type: String, default: '' },    // Telefon Numarası
+    pharmacistName: { type: String, default: '' },
+    address: { type: String, default: '' },
+    phoneNumber: { type: String, default: '' },
 
     isAdmin: { type: Boolean, default: false },
     isApproved: { type: Boolean, default: false },
+    
+    // YENİ: ŞİFRE SIFIRLAMA ALANLARI
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
+
     createdAt: { type: Date, default: Date.now }
 });
 
