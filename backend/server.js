@@ -36,7 +36,8 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/medicines', require('./routes/medicines'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/messages', require('./routes/messages')); // <-- Bu satır çok önemli!
+app.use('/api/messages', require('./routes/messages')); //
+app.use('/api/payments', require('./routes/payments')); // <-- Bu satır çok önemli!
 
 // --- SOCKET.IO (GERÇEK ZAMANLI İLETİŞİM) ---
 io.on('connection', (socket) => {

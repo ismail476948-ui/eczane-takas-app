@@ -1,42 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/authMiddleware');
+const auth = require('../middleware/auth');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 
-// 1. ÖDEME EKLE (Para Gönderdim veya Para Aldım)
-router.post('/', auth, async (req, res) => {
-    try {
-        const { targetUserId, amount, type, description } = req.body;
-        // type: 'sent' (Ben ödedim) veya 'received' (Ben tahsil ettim)
-        
-        let fromUser, toUser;
-
-        if (type === 'sent') {
-            fromUser = req.user.id;     // Gönderen Ben
-            toUser = targetUserId;      // Alan O
-        } else {
-            fromUser = targetUserId;    // Gönderen O
-            toUser = req.user.id;       // Alan Ben
-        }
-
-        const newPayment = new Payment({
-            fromUser,
-            toUser,
-            amount,
-            description
-        });
-
-        await newPayment.save();
-        res.json(newPayment);
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Sunucu Hatası');
-    }
-});
-
-// 2. TÜM ÖDEMELERİ GETİR (Benimle ilgili olanlar)
+// 1. Tüm Ödemeleri Getir (Senin veya sana yapılanlar)
 router.get('/', auth, async (req, res) => {
     try {
         const payments = await Payment.find({
@@ -49,24 +17,59 @@ router.get('/', auth, async (req, res) => {
         res.json(payments);
     } catch (err) {
         console.error(err);
-        res.status(500).send('Sunucu Hatası');
+        res.status(500).send('Server Hatası');
     }
 });
 
-// ... üstteki kodlar ...
+// 2. Yeni Ödeme Ekle (Hesaplaşma Modalı Buraya İstek Atıyor)
+router.post('/', auth, async (req, res) => {
+    const { targetUserId, amount, type, description } = req.body;
 
-// 3. ÖDEME SİL (Hatalı işlemi geri al)
+    try {
+        // Validation
+        if (!targetUserId || !amount) {
+            return res.status(400).json({ message: 'Eksik bilgi.' });
+        }
+
+        let fromUser, toUser;
+
+        // Mantık: Eğer "sent" (Gönderdim) seçtiysen -> Para benden, ona gidiyor.
+        if (type === 'sent') {
+            fromUser = req.user.id;
+            toUser = targetUserId;
+        } 
+        // Mantık: Eğer "received" (Aldım) seçtiysen -> Para ondan, bana geliyor.
+        else {
+            fromUser = targetUserId;
+            toUser = req.user.id;
+        }
+
+        const newPayment = new Payment({
+            fromUser,
+            toUser,
+            amount,
+            type, // Bunu sadece kayıt amaçlı tutuyoruz
+            description
+        });
+
+        await newPayment.save();
+        res.json(newPayment);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server Hatası');
+    }
+});
+
+// 3. Ödeme Sil (Yanlış girilirse)
 router.delete('/:id', auth, async (req, res) => {
     try {
         const payment = await Payment.findById(req.params.id);
+        if (!payment) return res.status(404).json({ message: 'Kayıt bulunamadı' });
 
-        if (!payment) {
-            return res.status(404).json({ message: 'Ödeme kaydı bulunamadı.' });
-        }
-
-        // Güvenlik: Sadece işlemi yapan taraflar silebilir
+        // Sadece işlemi yapan kişi silebilir
         if (payment.fromUser.toString() !== req.user.id && payment.toUser.toString() !== req.user.id) {
-            return res.status(401).json({ message: 'Bu işlemi silme yetkiniz yok.' });
+            return res.status(401).json({ message: 'Yetkisiz işlem' });
         }
 
         await Payment.findByIdAndDelete(req.params.id);
@@ -74,7 +77,7 @@ router.delete('/:id', auth, async (req, res) => {
 
     } catch (err) {
         console.error(err);
-        res.status(500).send('Sunucu Hatası');
+        res.status(500).send('Server Hatası');
     }
 });
 
