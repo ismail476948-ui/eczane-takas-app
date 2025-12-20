@@ -7,26 +7,32 @@ const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
-// --- GÜNCELLENMİŞ MAİL AYARLARI ---
+// --- MAİL AYARLARI (PORT 587 - STARTTLS) ---
+// Bu ayar bulut sunucularında (Render) daha stabil çalışır
 const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true, // SSL kullanıyoruz
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // 587 için false olmalı (STARTTLS)
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
-    }
+    },
+    tls: {
+        rejectUnauthorized: false // Bazen sertifika hatası verirse bunu yoksay
+    },
+    logger: true, // Logları detaylı gör
+    debug: true   // Hata ayıklamayı aç
 });
 
-// Sunucu başladığında bağlantıyı test et
+// Bağlantı Testi
 transporter.verify((error, success) => {
     if (error) {
-        console.log("Mail Bağlantı Hatası:", error);
+        console.log("Mail Bağlantı Hatası (Detaylı):", error);
     } else {
-        console.log("Mail Sunucusu Bağlandı ve Hazır! 📧");
+        console.log("✅ Mail Sunucusu (Port 587) Bağlandı ve Hazır!");
     }
 });
-// ----------------------------------
+// -------------------------------------------
 
 // KAYIT OL
 router.post('/register', async (req, res) => {
@@ -73,7 +79,7 @@ router.post('/login', async (req, res) => {
     } catch (err) { res.status(500).send('Hata'); }
 });
 
-// KULLANICI BİLGİLERİNİ GETİR
+// BEN KİMİM?
 router.get('/me', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user.id).select('-password');
@@ -124,11 +130,11 @@ router.post('/forgot-password', async (req, res) => {
             text: `Şifrenizi sıfırlamak için lütfen aşağıdaki linke tıklayın:\n\n${resetUrl}\n\nBu işlemi siz yapmadıysanız dikkate almayın.`
         };
 
-        await transporter.sendMail(mailOptions); // await ekledik
+        await transporter.sendMail(mailOptions);
         res.json({ message: 'Şifre sıfırlama linki e-posta adresinize gönderildi.' });
 
     } catch (err) {
-        console.error("Mail Gönderme Hatası:", err); // Hatayı detaylı logla
+        console.error("Mail Gönderme Hatası:", err); 
         res.status(500).json({ message: 'Mail gönderilemedi. Lütfen daha sonra tekrar deneyin.' });
     }
 });
