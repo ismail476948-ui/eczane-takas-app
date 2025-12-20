@@ -7,32 +7,29 @@ const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
-// --- MAİL AYARLARI (PORT 587 - STARTTLS) ---
-// Bu ayar bulut sunucularında (Render) daha stabil çalışır
+// --- BREVO (SENDINBLUE) MAİL AYARLARI ---
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // 587 için false olmalı (STARTTLS)
+    host: 'smtp-relay.brevo.com', // Brevo sunucusu
+    port: 587, // Standart port
+    secure: false, // 587 için false
     auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+        user: process.env.EMAIL_USER, // Render'da güncellediğin Brevo kullanıcısı
+        pass: process.env.EMAIL_PASS  // Render'da güncellediğin Brevo Key
     },
     tls: {
-        rejectUnauthorized: false // Bazen sertifika hatası verirse bunu yoksay
-    },
-    logger: true, // Logları detaylı gör
-    debug: true   // Hata ayıklamayı aç
+        rejectUnauthorized: false
+    }
 });
 
 // Bağlantı Testi
 transporter.verify((error, success) => {
     if (error) {
-        console.log("Mail Bağlantı Hatası (Detaylı):", error);
+        console.log("Mail Sunucusu Hatası:", error);
     } else {
-        console.log("✅ Mail Sunucusu (Port 587) Bağlandı ve Hazır!");
+        console.log("✅ Brevo Mail Sunucusu Bağlandı!");
     }
 });
-// -------------------------------------------
+// ----------------------------------------
 
 // KAYIT OL
 router.post('/register', async (req, res) => {
@@ -123,8 +120,9 @@ router.post('/forgot-password', async (req, res) => {
 
         const resetUrl = `https://${req.get('host')}/reset-password/${token}`; 
 
+        // Brevo için "From" kısmı kayıtlı olduğun mail adresi olmalıdır
         const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: process.env.EMAIL_USER, // Brevo'daki kayıtlı mailin
             to: user.email,
             subject: 'Eczane Takas - Şifre Sıfırlama',
             text: `Şifrenizi sıfırlamak için lütfen aşağıdaki linke tıklayın:\n\n${resetUrl}\n\nBu işlemi siz yapmadıysanız dikkate almayın.`
@@ -134,8 +132,8 @@ router.post('/forgot-password', async (req, res) => {
         res.json({ message: 'Şifre sıfırlama linki e-posta adresinize gönderildi.' });
 
     } catch (err) {
-        console.error("Mail Gönderme Hatası:", err); 
-        res.status(500).json({ message: 'Mail gönderilemedi. Lütfen daha sonra tekrar deneyin.' });
+        console.error("Mail Hatası:", err); 
+        res.status(500).json({ message: 'Mail gönderilemedi.' });
     }
 });
 
