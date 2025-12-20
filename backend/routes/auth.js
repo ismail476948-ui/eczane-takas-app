@@ -2,20 +2,31 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto'); // Rastgele kod üretmek için
-const nodemailer = require('nodemailer'); // Mail atmak için
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
-// --- MAİL GÖNDERME AYARLARI ---
+// --- GÜNCELLENMİŞ MAİL AYARLARI ---
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // SSL kullanıyoruz
     auth: {
-        user: process.env.EMAIL_USER, // Render'da tanımladığın gmail
-        pass: process.env.EMAIL_PASS  // Render'da tanımladığın şifre
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
-// ------------------------------
+
+// Sunucu başladığında bağlantıyı test et
+transporter.verify((error, success) => {
+    if (error) {
+        console.log("Mail Bağlantı Hatası:", error);
+    } else {
+        console.log("Mail Sunucusu Bağlandı ve Hazır! 📧");
+    }
+});
+// ----------------------------------
 
 // KAYIT OL
 router.post('/register', async (req, res) => {
@@ -92,28 +103,19 @@ router.put('/update', auth, async (req, res) => {
     } catch (err) { res.status(500).send('Hata'); }
 });
 
-// --- YENİ: ŞİFREMİ UNUTTUM (MAİL GÖNDERME) ---
+// ŞİFREMİ UNUTTUM
 router.post('/forgot-password', async (req, res) => {
     const { email } = req.body;
     try {
         const user = await User.findOne({ email });
         if (!user) return res.status(404).json({ message: 'Bu e-posta ile kayıtlı kullanıcı yok.' });
 
-        // Rastgele token oluştur
         const token = crypto.randomBytes(20).toString('hex');
-
-        // Token'ı kullanıcıya kaydet (1 saat geçerli)
         user.resetPasswordToken = token;
-        user.resetPasswordExpires = Date.now() + 3600000; // 1 saat
+        user.resetPasswordExpires = Date.now() + 3600000; 
         await user.save();
 
-        // Şifırlama Linki (Render adresine göre ayarla)
-        // DİKKAT: Buradaki link frontend adresin olmalı. Render linkini otomatik alması için origin kullanıyoruz.
-        // Ancak mailde tam adres lazım. Render domainini biliyorsan elle de yazabilirsin.
-        // Şimdilik gelen isteğin host bilgisini alıyoruz.
         const resetUrl = `https://${req.get('host')}/reset-password/${token}`; 
-        // Not: Eğer localhost'ta test ediyorsan req.get('host') localhost olur. Render'da render adresi olur.
-        // Ancak frontend ve backend aynı domainde olduğu için sorun yok.
 
         const mailOptions = {
             from: process.env.EMAIL_USER,
@@ -122,36 +124,28 @@ router.post('/forgot-password', async (req, res) => {
             text: `Şifrenizi sıfırlamak için lütfen aşağıdaki linke tıklayın:\n\n${resetUrl}\n\nBu işlemi siz yapmadıysanız dikkate almayın.`
         };
 
-        transporter.sendMail(mailOptions, (error, info) => {
-            if (error) {
-                console.log(error);
-                return res.status(500).json({ message: 'Mail gönderilemedi. Ayarları kontrol edin.' });
-            }
-            res.json({ message: 'Şifre sıfırlama linki e-posta adresinize gönderildi.' });
-        });
+        await transporter.sendMail(mailOptions); // await ekledik
+        res.json({ message: 'Şifre sıfırlama linki e-posta adresinize gönderildi.' });
 
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Hata');
+        console.error("Mail Gönderme Hatası:", err); // Hatayı detaylı logla
+        res.status(500).json({ message: 'Mail gönderilemedi. Lütfen daha sonra tekrar deneyin.' });
     }
 });
 
-// --- YENİ: ŞİFREYİ SIFIRLA (LINKTEN GELEN İSTEK) ---
+// ŞİFRE SIFIRLA
 router.post('/reset-password/:token', async (req, res) => {
     try {
-        // Token'ı ve süresini kontrol et
         const user = await User.findOne({
             resetPasswordToken: req.params.token,
-            resetPasswordExpires: { $gt: Date.now() } // Süresi geçmemiş olmalı
+            resetPasswordExpires: { $gt: Date.now() } 
         });
 
         if (!user) return res.status(400).json({ message: 'Geçersiz veya süresi dolmuş token.' });
 
-        // Yeni şifreyi kaydet
         const salt = await bcrypt.genSalt(10);
         user.password = await bcrypt.hash(req.body.password, salt);
         
-        // Tokenları temizle
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
 
