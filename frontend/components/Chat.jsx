@@ -2,8 +2,7 @@ import React, { useEffect, useState } from "react";
 import ScrollToBottom from "react-scroll-to-bottom";
 import io from "socket.io-client";
 
-// Socket'i dışarıda tanımlıyoruz ki her render'da sıfırlanmasın
-const socket = io.connect(); 
+const socket = io.connect();
 
 function Chat({ orderId, username, userId }) {
   const [currentMessage, setCurrentMessage] = useState("");
@@ -16,11 +15,11 @@ function Chat({ orderId, username, userId }) {
     }
   }, [orderId]);
 
-  // 2. Mesaj Gönderme
+  // 2. Mesaj Gönderme (Önce Ekrana Bas, Sonra Gönder)
   const sendMessage = async () => {
     if (currentMessage !== "") {
       const messageData = {
-        id: Date.now() + Math.random(), // <-- YENİ: Her mesaja benzersiz bir kimlik veriyoruz
+        id: Date.now(), // Basit ID
         orderId: orderId,
         author: username,
         senderId: userId,
@@ -28,32 +27,36 @@ function Chat({ orderId, username, userId }) {
         time: new Date(Date.now()).getHours() + ":" + new Date(Date.now()).getMinutes(),
       };
 
+      // ADIM 1: Mesajı sunucuya gitmeden ÖNCE kendi ekranımıza basıyoruz (Hız hissi verir)
+      setMessageList((list) => [...list, messageData]);
+      
+      // ADIM 2: Sunucuya gönderiyoruz
       await socket.emit("send_message", messageData);
+      
       setCurrentMessage("");
     }
   };
 
-  // 3. Mesajları Dinle (ÇİFT MESAJ ENGELLEYİCİ KOD)
+  // 3. Mesajları Dinle (FİLTRELİ DİNLEME)
   useEffect(() => {
     const handleMessage = (data) => {
-      setMessageList((prevList) => {
-        // KONTROL: Eğer gelen mesajın ID'si zaten listede varsa, ekleme yapma!
-        const isDuplicate = prevList.some(msg => msg.id === data.id);
-        if (isDuplicate) return prevList;
-        
-        // Yoksa ekle
-        return [...prevList, data];
-      });
+      // KRİTİK NOKTA BURASI 👇
+      // Gelen mesajın göndereni BEN isem (userId eşleşiyorsa), listeye ekleme yapma.
+      // Çünkü ben onu yukarıda (sendMessage içinde) zaten ekledim.
+      if (data.senderId === userId) {
+        return; 
+      }
+      
+      // Mesaj başkasından geldiyse listeye ekle
+      setMessageList((list) => [...list, data]);
     };
 
-    // Dinleyiciyi aç
     socket.on("receive_message", handleMessage);
 
-    // Temizlik (Component kapanırsa dinlemeyi kapat)
     return () => {
-        socket.off("receive_message", handleMessage);
+      socket.off("receive_message", handleMessage);
     };
-  }, []); // Bağımlılık dizisi boş kalsın
+  }, [userId]); // userId değişirse listener güncellensin
 
   return (
     <div className="chat-window" style={styles.window}>
@@ -66,7 +69,7 @@ function Chat({ orderId, username, userId }) {
             const isMe = messageContent.senderId === userId;
             return (
               <div
-                key={messageContent.id || index} // Key olarak ID kullanıyoruz
+                key={index}
                 className="message"
                 style={{
                     display: 'flex',
