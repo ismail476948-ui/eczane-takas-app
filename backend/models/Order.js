@@ -5,13 +5,13 @@ const OrderSchema = new mongoose.Schema({
     seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     medicine: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine', required: true },
     quantity: { type: Number, required: true },
-    status: { type: String, default: 'Beklemede' },
-    qrCodes: { type: String, default: '' },
+    status: { type: String, default: 'Beklemede' }, // Beklemede, Onaylandı, Transferde, Tamamlandı, İptal Edildi
     
-    // YENİ: BİLDİRİM SİSTEMİ İÇİN
-    // Alıcı (Buyer) için okunmamış mesaj var mı?
+    // Karekodlar (Array olarak tutuyoruz)
+    qrCodes: { type: [String], default: [] },
+    
+    // Bildirim Sistemi
     unreadForBuyer: { type: Boolean, default: false },
-    // Satıcı (Seller) için okunmamış mesaj var mı?
     unreadForSeller: { type: Boolean, default: false },
 
     createdAt: { type: Date, default: Date.now }

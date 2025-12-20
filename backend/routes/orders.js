@@ -4,26 +4,22 @@ const auth = require('../middleware/auth');
 const Order = require('../models/Order');
 const Medicine = require('../models/Medicine');
 
-// Yeni Takas İsteği Oluştur (POST /api/orders)
+// 1. Yeni Takas İsteği (Sipariş) Oluştur
 router.post('/', auth, async (req, res) => {
     const { medicineId, quantity } = req.body;
 
     try {
-        // 1. İlaç var mı kontrol et
         const medicine = await Medicine.findById(medicineId).populate('user');
         if (!medicine) return res.status(404).json({ message: 'İlaç bulunamadı' });
 
-        // 2. Kendi ilacını alamazsın
         if (medicine.user._id.toString() === req.user.id) {
-            return res.status(400).json({ message: 'Kendi ilacınız için takas isteyemezsiniz.' });
+            return res.status(400).json({ message: 'Kendi ilacını alamazsın.' });
         }
 
-        // 3. Stok yeterli mi?
         if (medicine.quantity < quantity) {
             return res.status(400).json({ message: 'Yetersiz stok.' });
         }
 
-        // 4. Siparişi oluştur
         const newOrder = new Order({
             buyer: req.user.id,
             seller: medicine.user._id,
@@ -32,7 +28,7 @@ router.post('/', auth, async (req, res) => {
             status: 'Beklemede'
         });
 
-        // 5. İlacın stok adedini düş (Opsiyonel: İstersen sipariş tamamlanınca düşürebilirsin ama hemen düşmek daha güvenli)
+        // Stoktan düş
         medicine.quantity -= quantity;
         await medicine.save();
 
@@ -41,11 +37,11 @@ router.post('/', auth, async (req, res) => {
 
     } catch (err) {
         console.error(err);
-        res.status(500).send('Sunucu hatası');
+        res.status(500).send('Server Hatası');
     }
 });
 
-// Kullanıcının Siparişlerini Getir (Hem Alım Hem Satım)
+// 2. Siparişleri Getir (Benim aldıklarım veya sattıklarım)
 router.get('/', auth, async (req, res) => {
     try {
         const orders = await Order.find({
@@ -59,23 +55,27 @@ router.get('/', auth, async (req, res) => {
         res.json(orders);
     } catch (err) {
         console.error(err);
-        res.status(500).send('Sunucu hatası');
+        res.status(500).send('Server Hatası');
     }
 });
 
-// Sipariş Durumu Güncelle (Onay, İptal vs.)
+// 3. Sipariş Durumu Güncelleme (Onay, İptal, Karekod Ekleme)
 router.put('/:id', auth, async (req, res) => {
-    const { status, qrCodes } = req.body;
+    const { status, qrCodes } = req.body; // <--- KAREKODLAR BURADA ALINIYOR
+
     try {
         let order = await Order.findById(req.params.id);
         if (!order) return res.status(404).json({ message: 'Sipariş bulunamadı' });
 
         // Durumu güncelle
         if (status) order.status = status;
-        // Karekod varsa ekle
-        if (qrCodes) order.qrCodes = qrCodes;
+        
+        // Karekod varsa kaydet (DÜZELTİLEN KISIM BURASI)
+        if (qrCodes && Array.isArray(qrCodes)) {
+            order.qrCodes = qrCodes;
+        }
 
-        // Eğer iptal edildiyse stoğu geri iade et
+        // İptal edilirse stoğu iade et
         if (status === 'İptal Edildi') {
             const medicine = await Medicine.findById(order.medicine);
             if (medicine) {
@@ -88,28 +88,30 @@ router.put('/:id', auth, async (req, res) => {
         res.json(order);
     } catch (err) {
         console.error(err);
-        res.status(500).send('Sunucu hatası');
+        res.status(500).send('Server Hatası');
     }
 });
 
-// YENİ: SİPARİŞİN MESAJLARINI OKUNDU OLARAK İŞARETLE
+// 4. "Okundu" İşaretleme (Kırmızı noktayı söndürmek için)
 router.put('/:id/mark-read', auth, async (req, res) => {
     try {
         const order = await Order.findById(req.params.id);
         if (!order) return res.status(404).json({ message: 'Sipariş bulunamadı' });
 
-        // İsteği yapan kişi Alıcı mı Satıcı mı?
+        // İsteği yapan Alıcı ise -> Alıcı bildirimini kapat
         if (req.user.id === order.buyer.toString()) {
-            order.unreadForBuyer = false; // Alıcı okudu
-        } else if (req.user.id === order.seller.toString()) {
-            order.unreadForSeller = false; // Satıcı okudu
+            order.unreadForBuyer = false;
+        } 
+        // İsteği yapan Satıcı ise -> Satıcı bildirimini kapat
+        else if (req.user.id === order.seller.toString()) {
+            order.unreadForSeller = false;
         }
 
         await order.save();
-        res.json(order);
+        res.json({ success: true });
     } catch (err) {
         console.error(err);
-        res.status(500).send('Sunucu hatası');
+        res.status(500).send('Server Hatası');
     }
 });
 
