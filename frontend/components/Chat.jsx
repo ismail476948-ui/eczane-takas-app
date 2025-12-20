@@ -2,55 +2,58 @@ import React, { useEffect, useState } from "react";
 import ScrollToBottom from "react-scroll-to-bottom";
 import io from "socket.io-client";
 
-// Socket bağlantısı (Sunucu adresi otomatik algılanır)
+// Socket'i dışarıda tanımlıyoruz ki her render'da sıfırlanmasın
 const socket = io.connect(); 
 
 function Chat({ orderId, username, userId }) {
   const [currentMessage, setCurrentMessage] = useState("");
   const [messageList, setMessageList] = useState([]);
 
-  // 1. Odaya Katıl ve Eski Mesajları Getir (İsteğe bağlı API çağrısı da yapılabilir)
+  // 1. Odaya Katıl
   useEffect(() => {
     if (orderId) {
         socket.emit("join_room", orderId);
     }
-    // Not: Gerçek uygulamada burada axios.get ile eski mesajları veritabanından çekmelisin.
-    // Şimdilik sadece anlık konuşmaları tutuyoruz.
   }, [orderId]);
 
-  // 2. Mesaj Gönderme Fonksiyonu (DÜZELTİLDİ)
+  // 2. Mesaj Gönderme
   const sendMessage = async () => {
     if (currentMessage !== "") {
       const messageData = {
+        id: Date.now() + Math.random(), // <-- YENİ: Her mesaja benzersiz bir kimlik veriyoruz
         orderId: orderId,
         author: username,
-        senderId: userId, // Kendi ID'miz (Renk ayrımı için)
+        senderId: userId,
         message: currentMessage,
         time: new Date(Date.now()).getHours() + ":" + new Date(Date.now()).getMinutes(),
       };
 
-      // SADECE EMIT YAPIYORUZ (Listeye elle ekleme yapmıyoruz!)
       await socket.emit("send_message", messageData);
-      
       setCurrentMessage("");
     }
   };
 
-  // 3. Mesajları Dinle
+  // 3. Mesajları Dinle (ÇİFT MESAJ ENGELLEYİCİ KOD)
   useEffect(() => {
-    // Önceki dinleyicileri temizle ki katlanarak artmasın
-    socket.off("receive_message");
-
-    socket.on("receive_message", (data) => {
-      // Gelen mesajı listeye ekle
-      setMessageList((list) => [...list, data]);
-    });
-
-    // Component kapanırken dinlemeyi durdur
-    return () => {
-        socket.off("receive_message");
+    const handleMessage = (data) => {
+      setMessageList((prevList) => {
+        // KONTROL: Eğer gelen mesajın ID'si zaten listede varsa, ekleme yapma!
+        const isDuplicate = prevList.some(msg => msg.id === data.id);
+        if (isDuplicate) return prevList;
+        
+        // Yoksa ekle
+        return [...prevList, data];
+      });
     };
-  }, [socket]);
+
+    // Dinleyiciyi aç
+    socket.on("receive_message", handleMessage);
+
+    // Temizlik (Component kapanırsa dinlemeyi kapat)
+    return () => {
+        socket.off("receive_message", handleMessage);
+    };
+  }, []); // Bağımlılık dizisi boş kalsın
 
   return (
     <div className="chat-window" style={styles.window}>
@@ -60,12 +63,10 @@ function Chat({ orderId, username, userId }) {
       <div className="chat-body" style={styles.body}>
         <ScrollToBottom className="message-container" style={styles.scroll}>
           {messageList.map((messageContent, index) => {
-            // Mesaj benden mi geldi?
             const isMe = messageContent.senderId === userId;
-            
             return (
               <div
-                key={index}
+                key={messageContent.id || index} // Key olarak ID kullanıyoruz
                 className="message"
                 style={{
                     display: 'flex',
@@ -75,7 +76,7 @@ function Chat({ orderId, username, userId }) {
               >
                 <div>
                   <div className="message-content" style={{
-                      background: isMe ? '#28a745' : '#eee', // Ben: Yeşil, Karşı: Gri
+                      background: isMe ? '#28a745' : '#eee',
                       color: isMe ? 'white' : 'black',
                       padding: '8px 12px',
                       borderRadius: '15px',
@@ -112,7 +113,6 @@ function Chat({ orderId, username, userId }) {
   );
 }
 
-// Basit CSS Stilleri
 const styles = {
     window: { width: '300px', height: '400px', border: '1px solid #ccc', borderRadius: '10px', display: 'flex', flexDirection: 'column', background: 'white', boxShadow: '0 5px 15px rgba(0,0,0,0.2)' },
     header: { background: '#333', color: 'white', padding: '10px', borderTopLeftRadius: '10px', borderTopRightRadius: '10px', fontWeight: 'bold' },
