@@ -128,4 +128,46 @@ router.put('/users/reset-password/:id', auth, adminCheck, async (req, res) => {
     }
 });
 
+// 6. VERİTABANI TEMİZLİĞİ (YETİM VERİLERİ SİL) ---
+router.post('/cleanup', auth, adminCheck, async (req, res) => {
+    try {
+        // 1. Mevcut tüm kullanıcıların ID'lerini al
+        const users = await User.find({}, '_id');
+        const activeUserIds = users.map(u => u._id.toString());
+
+        // 2. Sahibi (Buyer veya Seller) aktif kullanıcı listesinde olmayan SİPARİŞLERİ sil
+        const deletedOrders = await Order.deleteMany({
+            $or: [
+                { buyer: { $nin: activeUserIds } },
+                { seller: { $nin: activeUserIds } }
+            ]
+        });
+
+        // 3. Sahibi aktif kullanıcı listesinde olmayan ÖDEMELERİ sil
+        const deletedPayments = await Payment.deleteMany({
+            $or: [
+                { fromUser: { $nin: activeUserIds } },
+                { toUser: { $nin: activeUserIds } }
+            ]
+        });
+
+        // 4. Sahibi aktif kullanıcı listesinde olmayan İLAÇLARI sil
+        const deletedMedicines = await Medicine.deleteMany({
+            user: { $nin: activeUserIds }
+        });
+
+        res.json({
+            message: 'Temizlik tamamlandı.',
+            details: {
+                ordersRemoved: deletedOrders.deletedCount,
+                paymentsRemoved: deletedPayments.deletedCount,
+                medicinesRemoved: deletedMedicines.deletedCount
+            }
+        });
+    } catch (err) {
+        console.error("Temizlik Hatası:", err);
+        res.status(500).send('Temizlik sırasında hata oluştu.');
+    }
+});
+
 module.exports = router;
