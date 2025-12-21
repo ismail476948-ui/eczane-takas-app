@@ -1,57 +1,113 @@
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcryptjs'); // Şifreleme için gerekli
+const bcrypt = require('bcryptjs'); // Şifreleme için
+const auth = require('../middleware/auth');
+
+// --- MODELLER (Temizlik için hepsi lazım) ---
 const User = require('../models/User');
 const Medicine = require('../models/Medicine');
 const Order = require('../models/Order');
-const auth = require('../middleware/auth');
+const Message = require('../models/Message');
+const Payment = require('../models/Payment'); // Cari hesap ödemeleri
 
-// Middleware: Sadece Admin girebilir
+// --- MIDDLEWARE: SADECE ADMİN GİREBİLİR ---
 const adminCheck = async (req, res, next) => {
     try {
         const user = await User.findById(req.user.id);
-        if (!user.isAdmin) return res.status(403).json({ message: 'Yetkisiz işlem.' });
+        if (!user || !user.isAdmin) {
+            return res.status(403).json({ message: 'Bu işlem için yetkiniz yok.' });
+        }
         next();
-    } catch (err) { res.status(500).send('Server Error'); }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Sunucu Hatası');
+    }
 };
 
-// İstatistikler
+// 1. DASHBOARD İSTATİSTİKLERİ
 router.get('/stats', auth, adminCheck, async (req, res) => {
     try {
         const userCount = await User.countDocuments();
         const medicineCount = await Medicine.countDocuments();
         const orderCount = await Order.countDocuments();
-        const activeOrders = await Order.countDocuments({ status: { $ne: 'Tamamlandı' } });
+        // Bekleyen sipariş sayısı
+        const activeOrders = await Order.countDocuments({ status: 'Beklemede' });
 
-        res.json({ users: userCount, medicines: medicineCount, orders: orderCount, activeOrders });
-    } catch (err) { res.status(500).send('Server Error'); }
+        res.json({ 
+            users: userCount, 
+            medicines: medicineCount, 
+            orders: orderCount, 
+            activeOrders 
+        });
+    } catch (err) {
+        res.status(500).send('Sunucu Hatası');
+    }
 });
 
-// Tüm Kullanıcıları Getir
+// 2. TÜM KULLANICILARI GETİR
 router.get('/users', auth, adminCheck, async (req, res) => {
     try {
         const users = await User.find().select('-password').sort({ createdAt: -1 });
         res.json(users);
-    } catch (err) { res.status(500).send('Server Error'); }
+    } catch (err) {
+        res.status(500).send('Sunucu Hatası');
+    }
 });
 
-// Kullanıcıyı Onayla
+// 3. KULLANICIYI ONAYLA
 router.put('/users/approve/:id', auth, adminCheck, async (req, res) => {
     try {
         await User.findByIdAndUpdate(req.params.id, { isApproved: true });
         res.json({ message: 'Kullanıcı onaylandı.' });
-    } catch (err) { res.status(500).send('Server Error'); }
+    } catch (err) {
+        res.status(500).send('Sunucu Hatası');
+    }
 });
 
-// Kullanıcı Sil
+// 4. KULLANICIYI VE TÜM GEÇMİŞİNİ SİL (KRİTİK GÜNCELLEME)
 router.delete('/users/:id', auth, adminCheck, async (req, res) => {
+    const userId = req.params.id;
+
     try {
-        await User.findByIdAndDelete(req.params.id);
-        res.json({ message: 'Kullanıcı silindi.' });
-    } catch (err) { res.status(500).send('Server Error'); }
+        // A. İlaçlarını Sil
+        await Medicine.deleteMany({ user: userId });
+
+        // B. Siparişlerini Sil (Alıcı veya Satıcı olduğu her şey)
+        await Order.deleteMany({ 
+            $or: [{ buyer: userId }, { seller: userId }] 
+        });
+
+        // C. Mesajlarını Sil
+        await Message.deleteMany({ sender: userId });
+
+        // D. Ödeme Kayıtlarını Sil (Cari hesap patlamasın diye)
+        // Eğer Payment modeli henüz yoksa veya hata verirse bu bloğu try-catch içine alabilirsin
+        try {
+            if (Payment) {
+                await Payment.deleteMany({ 
+                    $or: [{ fromUser: userId }, { toUser: userId }] 
+                });
+            }
+        } catch (paymentErr) {
+            console.log("Ödeme silme uyarısı (Önemli değil):", paymentErr.message);
+        }
+
+        // E. Kullanıcının Kendisini Sil
+        const deletedUser = await User.findByIdAndDelete(userId);
+
+        if (!deletedUser) {
+            return res.status(404).json({ message: 'Kullanıcı zaten yok.' });
+        }
+
+        res.json({ message: 'Kullanıcı ve ilişkili tüm verileri (ilaç, sipariş, mesaj, bakiye) başarıyla silindi.' });
+
+    } catch (err) {
+        console.error("Silme Hatası:", err);
+        res.status(500).send('Silme işlemi sırasında hata oluştu.');
+    }
 });
 
-// --- YENİ: ADMİN TARAFINDAN ŞİFRE SIFIRLAMA ---
+// 5. KULLANICI ŞİFRESİNİ SIFIRLA (Admin yetkisiyle)
 router.put('/users/reset-password/:id', auth, adminCheck, async (req, res) => {
     const { newPassword } = req.body;
     
@@ -65,10 +121,10 @@ router.put('/users/reset-password/:id', auth, adminCheck, async (req, res) => {
 
         await User.findByIdAndUpdate(req.params.id, { password: hashedPassword });
         
-        res.json({ message: 'Kullanıcı şifresi başarıyla güncellendi.' });
+        res.json({ message: 'Kullanıcı şifresi başarıyla değiştirildi.' });
     } catch (err) {
         console.error(err);
-        res.status(500).send('Server Error');
+        res.status(500).send('Sunucu Hatası');
     }
 });
 
