@@ -30,11 +30,19 @@ transporter.verify((error, success) => {
     }
 });
 
-// --- KAYIT OL (DÜZELTİLDİ) ---
+// --- KAYIT OL (GÜNCELLENMİŞ) ---
 router.post('/register', async (req, res) => {
-    const { pharmacyName, city, email, password } = req.body;
+    // let kullanarak değişkenlerin içeriğini değiştirebilir hale getirdik
+    let { pharmacyName, city, email, password } = req.body;
 
     try {
+        // --- KRİTİK DÜZELTME BAŞLANGICI ---
+        // Boşlukları temizle ve e-postayı küçük harfe çevir
+        if (pharmacyName) pharmacyName = pharmacyName.trim();
+        if (city) city = city.trim();
+        if (email) email = email.trim().toLowerCase();
+        // --- KRİTİK DÜZELTME BİTİŞİ ---
+
         // 1. Alanların doluluğunu kontrol et
         if (!pharmacyName || !city || !email || !password) {
             return res.status(400).json({ message: 'Lütfen tüm alanları (Eczane, Şehir, E-posta, Şifre) doldurun.' });
@@ -86,7 +94,11 @@ router.post('/register', async (req, res) => {
         console.error("Kayıt Sırasında Beklenmedik Hata:", err);
         // MongoDB hata kodlarını yakala (Örn: 11000 duplicate key)
         if (err.code === 11000) {
-            return res.status(400).json({ message: 'Bu bilgilerle daha önce kayıt yapılmış (E-posta veya Eczane çakışması).' });
+            // Hangi alanın çakıştığını anlamaya çalışalım
+            if (err.keyPattern && err.keyPattern.email) {
+                 return res.status(400).json({ message: 'Bu e-posta adresi zaten sistemde kayıtlı.' });
+            }
+            return res.status(400).json({ message: 'Bu bilgilerle daha önce kayıt yapılmış (E-posta veya Eczane adı çakışması).' });
         }
         res.status(500).json({ message: 'Sunucu tarafında bir hata oluştu, lütfen tekrar deneyin.' });
     }
@@ -94,8 +106,12 @@ router.post('/register', async (req, res) => {
 
 // --- GİRİŞ YAP ---
 router.post('/login', async (req, res) => {
-    const { email, password } = req.body;
+    let { email, password } = req.body; // Değiştirilebilir yaptık
+    
     try {
+        // Giriş yaparken de e-postayı normalize ediyoruz ki hata olmasın
+        if (email) email = email.trim().toLowerCase();
+
         const user = await User.findOne({ email });
         if (!user) return res.status(400).json({ message: 'Kullanıcı bulunamadı.' });
 
@@ -141,8 +157,8 @@ router.put('/update', auth, async (req, res) => {
         const user = await User.findById(req.user.id);
         if (!user) return res.status(404).json({ message: 'Kullanıcı yok' });
 
-        if (pharmacyName) user.pharmacyName = pharmacyName;
-        if (city) user.city = city;
+        if (pharmacyName) user.pharmacyName = pharmacyName.trim(); // Güncellerken de boşluk temizliği
+        if (city) user.city = city.trim();
         if (pharmacistName) user.pharmacistName = pharmacistName;
         if (address) user.address = address;
         if (phoneNumber) user.phoneNumber = phoneNumber;
@@ -153,13 +169,21 @@ router.put('/update', auth, async (req, res) => {
         }
         await user.save();
         res.json({ message: 'Profil güncellendi', user });
-    } catch (err) { res.status(500).send('Hata'); }
+    } catch (err) { 
+        // Profil güncellerken isim çakışması olursa yakala
+        if (err.code === 11000) {
+            return res.status(400).json({ message: 'Bu bilgiler başkası tarafından kullanılıyor.' });
+        }
+        res.status(500).send('Hata'); 
+    }
 });
 
 // ŞİFREMİ UNUTTUM
 router.post('/forgot-password', async (req, res) => {
-    const { email } = req.body;
+    let { email } = req.body;
     try {
+        if (email) email = email.trim().toLowerCase(); // Maili standartlaştır
+
         const user = await User.findOne({ email });
         if (!user) return res.status(404).json({ message: 'Bu e-posta ile kayıtlı kullanıcı yok.' });
 
