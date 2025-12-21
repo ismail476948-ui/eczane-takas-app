@@ -54,11 +54,9 @@ function CurrentAccount() {
     // 1. SİPARİŞLERİ İŞLE
     orders.forEach(order => {
         if (order.status === 'Tamamlandı') {
-            // HATA DÜZELTME: ?. kullanımı ile silinmiş kullanıcı kontrolü
             const isSeller = order.seller?._id === currentUserId;
             const partner = isSeller ? order.buyer : order.seller;
             
-            // Eğer partner silindiyse yedek değerler ata
             const partnerId = partner?._id || "deleted_user";
             const partnerName = partner?.pharmacyName || '⚠️ Silinmiş Eczane';
 
@@ -92,7 +90,6 @@ function CurrentAccount() {
 
     // 2. NAKİT ÖDEMELERİ İŞLE
     payments.forEach(payment => {
-        // HATA DÜZELTME: ?. kullanımı ile silinmiş kullanıcı kontrolü
         const isPayer = payment.fromUser?._id === currentUserId; 
         const partner = isPayer ? payment.toUser : payment.fromUser;
 
@@ -139,7 +136,6 @@ function CurrentAccount() {
 
   // --- FONKSİYONLAR ---
   const openPaymentModal = (pharmacyId, pharmacyName) => {
-    // Silinmiş eczaneye ödeme girişi yapılmasını engelle
     if (pharmacyId === "deleted_user") return toast.warning("Silinmiş eczane için işlem yapılamaz.");
     
     setSelectedPharmacy({ id: pharmacyId, name: pharmacyName });
@@ -301,7 +297,8 @@ function CurrentAccount() {
                              {t.type === 'sale' ? '+' : (t.type === 'purchase' ? '-' : (t.type === 'payment_sent' ? 'Borç Ödendi (+)' : 'Tahsilat (-)'))} {t.amount} ₺
                         </td>
                         <td style={tdStyle}>
-                            {(t.type === 'payment_sent' || t.type === 'payment_received') && (
+                            {/* DÜZENLEME: Sadece 'Ödeme Yapıldı' (payment_sent) türündeki işlemler silinebilir */}
+                            {t.type === 'payment_sent' && (
                                 <button onClick={() => handleDeletePayment(t._id)} style={{ background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', padding: '5px 10px', cursor: 'pointer', fontSize:'0.9em' }}>🗑 Sil</button>
                             )}
                         </td>
