@@ -58,20 +58,15 @@ function Exchanges({ onPageLoad }) {
     fetchData();
     if (onPageLoad) onPageLoad();
 
-    // SOCKET DİNLEYİCİSİ (Çift mesajı önleyen yapı)
+    // SOCKET DİNLEYİCİSİ
     socket.on("receive_message", (data) => {
-        // Mesajı atan ben isem listeye ekleme (Zaten gönderirken ekledik)
-        const senderId = data.sender._id || data.sender;
+        const senderId = data.sender?._id || data.sender; // Güvenli erişim
         if (senderId === currentUserId) return;
 
-        // Mesaj şu an açık olan sohbetin mesajıysa ekrana bas
         setChatMessages((prev) => {
-            // Eğer o an açık olan orderId ile mesajın orderId'si tutuyorsa ekle
-            // (Burada closure sorunu olmaması için basit ekleme yapıyoruz, kullanıcı görmezse sorun yok)
             return [...prev, data];
         });
 
-        // Eğer sohbet açık değilse, arka planda listeyi yenile ki kırmızı nokta yansın
         fetchData(); 
     });
 
@@ -94,7 +89,6 @@ function Exchanges({ onPageLoad }) {
 
         await axios.put(`/api/orders/${orderId}`, body, { headers: { 'x-auth-token': token } });
         
-        // Socket ile karşı tarafa bildirim gibi mesaj at (Sistem Mesajı)
         socket.emit('send_message', { 
             orderId: orderId, 
             text: `⚠️ SİSTEM: Sipariş durumu güncellendi: ${newStatus}`, 
@@ -104,7 +98,7 @@ function Exchanges({ onPageLoad }) {
         alert(`İşlem Başarılı: ${newStatus}`);
         setShowScanModal(false); 
         setQrText(""); 
-        fetchData(); // Listeyi yenile
+        fetchData(); 
     } catch (error) { 
         alert("Hata oluştu."); 
     }
@@ -117,18 +111,12 @@ function Exchanges({ onPageLoad }) {
     setChatMessages([]);
     setShowChatModal(true);
 
-    // Socket Odasına Gir
     socket.emit("join_room", orderId);
 
     try {
-        // 1. Eski mesajları API'den çek
         const res = await axios.get(`/api/messages/${orderId}`, { headers: { 'x-auth-token': token } });
         setChatMessages(res.data);
-
-        // 2. Okundu olarak işaretle
         await axios.put(`/api/messages/read/${orderId}`, {}, { headers: { 'x-auth-token': token } });
-
-        // 3. Yerel state'teki kırmızı noktayı sil
         setUnreadCounts(prev => ({ ...prev, [orderId]: 0 }));
     } catch (error) {
         console.error("Sohbet açma hatası:", error);
@@ -140,7 +128,6 @@ function Exchanges({ onPageLoad }) {
     if (!newMessage.trim()) return;
 
     try {
-        // 1. Mesajı veritabanına kaydet (Backend populate edip dönecek)
         const res = await axios.post('/api/messages', { 
             orderId: chatOrderId, 
             text: newMessage 
@@ -148,11 +135,9 @@ function Exchanges({ onPageLoad }) {
 
         const savedMessage = res.data;
 
-        // 2. Ekrana Bas (Hız hissi için)
         setChatMessages((prev) => [...prev, savedMessage]);
         setNewMessage("");
 
-        // 3. Socket ile karşıya yolla
         socket.emit("send_message", savedMessage);
 
     } catch (error) {
@@ -175,7 +160,6 @@ function Exchanges({ onPageLoad }) {
   };
 
   const handleOpenViewQR = (codes) => {
-    // Karekodları modalda göster
     setViewQRCodes(codes || []);
     setShowViewQRModal(true);
   };
@@ -187,15 +171,19 @@ function Exchanges({ onPageLoad }) {
       .catch(() => alert("Kopyalama başarısız."));
   };
 
-  // --- FİLTRELEME MANTIĞI ---
+  // --- FİLTRELEME MANTIĞI (DÜZELTİLDİ: ÇÖKME KORUMASI EKLENDİ) ---
   const filteredOrders = orders.filter(order => {
+    // ?. kullanarak eğer user silindiyse hata verme, boş string kabul et
     const term = searchTerm.toLowerCase();
     const medName = order.medicine?.name?.toLowerCase() || '';
     const buyerName = order.buyer?.pharmacyName?.toLowerCase() || '';
     const sellerName = order.seller?.pharmacyName?.toLowerCase() || '';
+    
     const searchMatch = medName.includes(term) || buyerName.includes(term) || sellerName.includes(term);
 
-    const isSeller = order.seller._id === currentUserId;
+    // BURASI ÇOK ÖNEMLİ: order.seller null ise hata vermesin
+    const isSeller = order.seller?._id === currentUserId;
+    
     const directionMatch = (isSeller && filters.outgoing) || (!isSeller && filters.incoming);
 
     const isCompleted = order.status === 'Tamamlandı';
@@ -234,9 +222,16 @@ function Exchanges({ onPageLoad }) {
       {/* LİSTELEME */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         {filteredOrders.map((order) => {
-          const isSeller = order.seller._id === currentUserId;
-          const partnerName = isSeller ? order.buyer?.pharmacyName : order.seller?.pharmacyName;
-          const statusColor = isSeller ? '#28a745' : '#dc3545'; // Satıcı Yeşil, Alıcı Kırmızı çerçeve
+          // GÜVENLİ DEĞİŞKENLER: Kullanıcı silindiyse 'Silinmiş Eczane' yaz
+          const isSeller = order.seller?._id === currentUserId;
+          const partnerName = isSeller 
+              ? (order.buyer?.pharmacyName || '⚠️ Silinmiş Eczane') 
+              : (order.seller?.pharmacyName || '⚠️ Silinmiş Eczane');
+          
+          const medName = order.medicine?.name || '⚠️ Silinmiş İlaç';
+          const medPrice = order.medicine?.price || 0;
+
+          const statusColor = isSeller ? '#28a745' : '#dc3545';
           const unreadCount = unreadCounts[order._id] || 0;
 
           return (
@@ -255,12 +250,12 @@ function Exchanges({ onPageLoad }) {
                 {/* SOL TARAF: BİLGİLER */}
                 <div style={{ flex: 1, minWidth: '250px' }}>
                     <h3 style={{ margin: '0 0 5px 0', color: '#343a40' }}>
-                        {isSeller ? '📤 Satış:' : '📥 Alış:'} {order.medicine?.name} 
+                        {isSeller ? '📤 Satış:' : '📥 Alış:'} {medName} 
                         <span style={{ fontSize: '0.8em', color: '#6c757d', marginLeft: '10px' }}>(x{order.quantity})</span>
                     </h3>
                     <div style={{ fontSize: '0.9em', color: '#495057' }}>
                         <p style={{ margin: '2px 0' }}>👤 <strong>{partnerName}</strong></p>
-                        <p style={{ margin: '2px 0' }}>💰 Toplam: <strong>{(order.medicine?.price || 0) * order.quantity} ₺</strong></p>
+                        <p style={{ margin: '2px 0' }}>💰 Toplam: <strong>{medPrice * order.quantity} ₺</strong></p>
                         <p style={{ margin: '2px 0' }}>📅 Durum: <strong style={{ color: statusColor }}>{order.status}</strong></p>
                     </div>
                 </div>
@@ -274,7 +269,7 @@ function Exchanges({ onPageLoad }) {
                         {unreadCount > 0 && <span style={badgeStyle}>!</span>}
                     </button>
 
-                    {/* KAREKODLARI GÖSTER (Sadece transferde veya tamamlandıysa ve kod varsa) */}
+                    {/* KAREKODLARI GÖSTER */}
                     {order.qrCodes && order.qrCodes.length > 0 && (
                         <button onClick={() => handleOpenViewQR(order.qrCodes)} style={btnStyle('#6610f2')}>
                             📦 Kodları Gör
@@ -294,7 +289,7 @@ function Exchanges({ onPageLoad }) {
                         <button onClick={() => updateStatus(order._id, 'Tamamlandı')} style={btnStyle('#17a2b8')}>🤝 Teslim Aldım</button>
                     )}
 
-                    {/* İPTAL BUTONU (Ortak) */}
+                    {/* İPTAL BUTONU */}
                     {((!isSeller && order.status === 'Beklemede') || (isSeller && order.status !== 'Tamamlandı' && order.status !== 'İptal Edildi')) && (
                         <button onClick={() => updateStatus(order._id, 'İptal Edildi')} style={btnStyle('#6c757d')}>🚫 İptal</button>
                     )}
