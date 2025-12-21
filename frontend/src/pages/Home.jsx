@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import io from 'socket.io-client';
 
+// Socket bağlantısı
 const socket = io.connect();
 
 function Home() {
@@ -53,10 +54,13 @@ function Home() {
             quantity: parseInt(orderQuantity)
         }, { headers: { 'x-auth-token': token } });
 
-        socket.emit('send_notification', {
-            receiverId: selectedMedicine.user._id,
-            type: 'new_order'
-        });
+        // Bildirim gönder (Eğer kullanıcı hala varsa)
+        if (selectedMedicine.user && selectedMedicine.user._id) {
+            socket.emit('send_notification', {
+                receiverId: selectedMedicine.user._id,
+                type: 'new_order'
+            });
+        }
 
         toast.success("Takas isteği başarıyla gönderildi!");
         setShowOrderModal(false); // Modalı kapat
@@ -70,12 +74,21 @@ function Home() {
     }
   };
 
-  const filteredMedicines = medicines.filter(med => 
-    med.quantity > 0 && 
-    new Date(med.expiryDate) > new Date() &&
-    med.user._id !== currentUserId &&
-    med.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // --- FİLTRELEME ---
+  const filteredMedicines = medicines.filter(med => {
+    // KORUMA 1: Eğer ilacın sahibi silindiyse (med.user null ise) hata verme, güvenli geç
+    const pharmacyName = med.user?.pharmacyName || '';
+    
+    // KORUMA 2: Kendim eklediğim ilaçları görmeyeyim (user varsa kontrol et)
+    const isNotMyMedicine = med.user?._id !== currentUserId;
+
+    return (
+        med.quantity > 0 && 
+        new Date(med.expiryDate) > new Date() &&
+        isNotMyMedicine && 
+        med.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
 
   return (
     <div>
@@ -98,14 +111,31 @@ function Home() {
                 <p>💰 <strong>Fiyat:</strong> {med.price} ₺</p>
                 <p>📦 <strong>Stok:</strong> {med.quantity} Adet</p>
                 <p>📅 <strong>SKT:</strong> {new Date(med.expiryDate).toLocaleDateString()}</p>
-                <p>📍 <strong>Konum:</strong> {med.user.city}</p>
-                <p style={{fontSize:'0.8em', color:'#888'}}>🏥 {med.user.pharmacyName}</p>
+                
+                {/* --- BURASI DÜZELTİLDİ: SİLİNMİŞ KULLANICI KONTROLÜ --- */}
+                <p>📍 <strong>Konum:</strong> {med.user?.city || 'Bilinmiyor'}</p>
+                <p style={{fontSize:'0.8em', color: med.user ? '#888' : 'red'}}>
+                    🏥 {med.user?.pharmacyName || '⚠️ Silinmiş Eczane'}
+                </p>
             </div>
             
             <button 
                 onClick={() => openOrderModal(med)}
-                style={{ width: '100%', padding: '12px', background: '#28a745', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', marginTop: '15px', fontWeight:'bold', fontSize:'1em' }}>
-                🔄 Takas İste
+                // Eğer kullanıcı silinmişse butonu pasif yap
+                disabled={!med.user}
+                style={{ 
+                    width: '100%', 
+                    padding: '12px', 
+                    background: med.user ? '#28a745' : '#ccc', // Kullanıcı yoksa gri yap
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    cursor: med.user ? 'pointer' : 'not-allowed', 
+                    marginTop: '15px', 
+                    fontWeight:'bold', 
+                    fontSize:'1em' 
+                }}>
+                {med.user ? '🔄 Takas İste' : 'Pasif İlaç'}
             </button>
           </div>
         ))}
