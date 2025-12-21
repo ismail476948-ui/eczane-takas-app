@@ -7,14 +7,15 @@ const User = require('../models/User'); // Admin kontrolü için gerekli
 // 1. İLAÇ EKLE
 router.post('/', auth, async (req, res) => {
     try {
-        const { name, expiryDate, quantity, price, condition, exchangeWith } = req.body;
+        const { baseMedicine, name, expiryDate, quantity, price, condition, exchangeWith } = req.body;
 
         const newMedicine = new Medicine({
             user: req.user.id,
+            baseMedicine,
             name,
             expiryDate,
             quantity,
-            price, 
+            price,
             condition,
             exchangeWith
         });
@@ -75,7 +76,7 @@ router.put('/:id', auth, async (req, res) => {
         if (!medicine) return res.status(404).json({ message: 'İlaç bulunamadı' });
 
         const currentUser = await User.findById(req.user.id);
-        
+
         // Güncelleme yetkisi kontrolü (Sahibi veya Admin)
         const isOwner = medicine.user && medicine.user.toString() === req.user.id;
         const isAdmin = currentUser && currentUser.isAdmin;

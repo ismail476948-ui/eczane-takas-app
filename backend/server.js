@@ -17,7 +17,7 @@ const server = http.createServer(app);
 // Socket.io Ayarları
 const io = new Server(server, {
     cors: {
-        origin: "*", 
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
@@ -34,6 +34,7 @@ mongoose.connect(process.env.MONGO_URI)
 // ROTALAR
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/medicines', require('./routes/medicines'));
+app.use('/api/medicine-base', require('./routes/medicineBase')); // Master liste rotası
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/messages', require('./routes/messages')); //
@@ -41,7 +42,7 @@ app.use('/api/payments', require('./routes/payments')); // <-- Bu satır çok ö
 
 // --- SOCKET.IO (GERÇEK ZAMANLI İLETİŞİM) ---
 io.on('connection', (socket) => {
-    
+
     // Odaya Katıl
     socket.on('join_room', (orderId) => {
         socket.join(orderId);
@@ -51,12 +52,12 @@ io.on('connection', (socket) => {
     socket.on('send_message', (data) => {
         // Mesajı odadaki diğer kişiye ilet
         io.to(data.orderId).emit('receive_message', data);
-        
+
         // Not: Veritabanı kaydını zaten routes/messages.js API'sinde yapıyoruz.
         // Burası sadece anlık görüntü için.
     });
 
-    socket.on('disconnect', () => {});
+    socket.on('disconnect', () => { });
 });
 
 // --- PRODUCTION AYARLARI (RENDER İÇİN DÜZELTİLDİ) ---

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables
+.env
+**/.env
+
+# Build outputs
+dist/
+build/
+**/dist/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Excel data
+backend/ilaçlistesi.xlsx
+
+# Misc
+.DS_Store
+.vscode/
+.idea/
