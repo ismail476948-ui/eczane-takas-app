@@ -8,7 +8,15 @@ const socket = io.connect();
 
 function Home() {
   const [medicines, setMedicines] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [sortType, setSortType] = useState("newest"); // 'newest', 'name-asc', 'price-asc', 'price-desc', 'expiry-asc'
+  const token = localStorage.getItem('token');
+  const currentUserId = localStorage.getItem('userId');
+
+  // MODAL İÇİN STATE'LER
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [selectedMedicine, setSelectedMedicine] = useState(null);
+  const [orderQuantity, setOrderQuantity] = useState(1);
 
   useEffect(() => {
     const fetchMedicines = async () => {

@@ -166,7 +166,7 @@ function MyInventory() {
             </div>
           );
         })}
-        {filteredMedicines.length === 0 && <p>Listelenecek ilaç yok.</p>}
+        {processedMedicines.length === 0 && <p>Listelenecek ilaç yok.</p>}
       </div>
     </div>
   );
