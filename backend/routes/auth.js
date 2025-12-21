@@ -7,10 +7,10 @@ const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
-// --- BREVO (SENDINBLUE) - PORT 2525 (Yedek Kapı) ---
+// --- BREVO (SENDINBLUE) - PORT 2525 ---
 const transporter = nodemailer.createTransport({
     host: 'smtp-relay.brevo.com',
-    port: 2525, // <-- DİKKAT: Port 2525 yapıldı (Render bunu engellemez)
+    port: 2525,
     secure: false, 
     auth: {
         user: process.env.EMAIL_USER, 
@@ -29,32 +29,70 @@ transporter.verify((error, success) => {
         console.log("✅ Brevo Sunucusu (Port 2525) Bağlandı!");
     }
 });
-// ---------------------------------------------------
 
-// KAYIT OL
+// --- KAYIT OL (DÜZELTİLDİ) ---
 router.post('/register', async (req, res) => {
     const { pharmacyName, city, email, password } = req.body;
-    try {
-        let user = await User.findOne({ email });
-        if (user) return res.status(400).json({ message: 'Bu e-posta zaten kayıtlı.' });
 
+    try {
+        // 1. Alanların doluluğunu kontrol et
+        if (!pharmacyName || !city || !email || !password) {
+            return res.status(400).json({ message: 'Lütfen tüm alanları (Eczane, Şehir, E-posta, Şifre) doldurun.' });
+        }
+
+        // 2. E-posta formatını kontrol et
+        if (!email.includes('@')) {
+            return res.status(400).json({ message: 'Geçerli bir e-posta adresi girin.' });
+        }
+
+        // 3. E-posta zaten kayıtlı mı?
+        let user = await User.findOne({ email });
+        if (user) {
+            return res.status(400).json({ message: 'Bu e-posta adresi zaten bir hesaba bağlı.' });
+        }
+
+        // 4. Eczane ismi kontrolü (Opsiyonel ama güvenlik için iyi)
+        let existingPharmacy = await User.findOne({ pharmacyName });
+        if (existingPharmacy) {
+            return res.status(400).json({ message: 'Bu eczane ismiyle zaten bir kayıt mevcut.' });
+        }
+
+        // 5. Şifreyi şifrele
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
+
+        // 6. İlk kullanıcı mı kontrolü (Admin ataması için)
         const isFirstAccount = (await User.countDocuments({})) === 0;
 
+        // 7. Yeni kullanıcıyı oluştur
         user = new User({
-            pharmacyName, city, email, password: hashedPassword,
-            isAdmin: isFirstAccount, isApproved: isFirstAccount 
+            pharmacyName,
+            city,
+            email,
+            password: hashedPassword,
+            isAdmin: isFirstAccount,
+            isApproved: isFirstAccount 
         });
+
         await user.save();
         
-        if (isFirstAccount) res.json({ message: 'Yönetici hesabı oluşturuldu.' });
-        else res.json({ message: 'Kayıt başarılı. Yönetici onayı bekleniyor.' });
+        if (isFirstAccount) {
+            res.json({ message: 'İlk kullanıcı olduğunuz için Yönetici hesabı oluşturuldu.' });
+        } else {
+            res.json({ message: 'Kayıt başarılı. Yönetici onayı bekliyor.' });
+        }
 
-    } catch (err) { res.status(500).send('Hata'); }
+    } catch (err) {
+        console.error("Kayıt Sırasında Beklenmedik Hata:", err);
+        // MongoDB hata kodlarını yakala (Örn: 11000 duplicate key)
+        if (err.code === 11000) {
+            return res.status(400).json({ message: 'Bu bilgilerle daha önce kayıt yapılmış (E-posta veya Eczane çakışması).' });
+        }
+        res.status(500).json({ message: 'Sunucu tarafında bir hata oluştu, lütfen tekrar deneyin.' });
+    }
 });
 
-// GİRİŞ YAP
+// --- GİRİŞ YAP ---
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -69,11 +107,23 @@ router.post('/login', async (req, res) => {
         }
 
         const payload = { user: { id: user.id, isAdmin: user.isAdmin } };
-        jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
+        jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' }, (err, token) => {
             if (err) throw err;
-            res.json({ token, user: { id: user.id, pharmacyName: user.pharmacyName, isAdmin: user.isAdmin, pharmacistName: user.pharmacistName, phoneNumber: user.phoneNumber } });
+            res.json({ 
+                token, 
+                user: { 
+                    id: user.id, 
+                    pharmacyName: user.pharmacyName, 
+                    isAdmin: user.isAdmin, 
+                    pharmacistName: user.pharmacistName, 
+                    phoneNumber: user.phoneNumber 
+                } 
+            });
         });
-    } catch (err) { res.status(500).send('Hata'); }
+    } catch (err) { 
+        console.error(err);
+        res.status(500).json({ message: 'Giriş hatası.' }); 
+    }
 });
 
 // BEN KİMİM?
