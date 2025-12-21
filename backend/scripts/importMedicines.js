@@ -20,8 +20,8 @@ const importMedicines = async () => {
         console.log(`${data.length} adet kayıt okundu, işleniyor...`);
 
         const formattedData = data.map(item => ({
-            name: item.İsim || item.Adı || item.NAME || item.name, // Excel sütun başlığına göre esneklik
-            barcode: item.Barkod || item.BARCODE || item.barcode || item.ID
+            name: item['İlaç Adı'] || item.İsim || item.Adı || item.NAME || item.name,
+            barcode: item['Güncel Barkod'] || item.Barkod || item.BARCODE || item.barcode || item.ID
         })).filter(item => item.name);
 
         // Mevcutları temizle (isteğe bağlı)

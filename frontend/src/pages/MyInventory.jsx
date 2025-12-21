@@ -6,6 +6,7 @@ function MyInventory() {
   const [medicines, setMedicines] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all"); // 'all', 'expired', 'valid'
+  const [sortType, setSortType] = useState("newest"); // 'newest', 'name-asc', 'price-asc', 'price-desc', 'expiry-asc'
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
   const currentUserId = localStorage.getItem('userId');
@@ -19,22 +20,10 @@ function MyInventory() {
       try {
         const res = await axios.get('/api/medicines');
         const myList = res.data.filter(med => {
-          // Bazı durumlarda med.user nesne, bazılarında ID string olabilir.
-          // Populate edildiği için genelde nesne gelir ama her iki durumu da kapsayalım.
           const ownerId = med.user?._id || med.user;
           return ownerId === currentUserId;
         });
-
-        // Son kullanma tarihine göre sırala (Süresi geçenler üstte)
-        const sortedList = [...myList].sort((a, b) => {
-          const isAExpired = new Date(a.expiryDate) < new Date();
-          const isBExpired = new Date(b.expiryDate) < new Date();
-          if (isAExpired && !isBExpired) return -1;
-          if (!isAExpired && isBExpired) return 1;
-          return new Date(a.expiryDate) - new Date(b.expiryDate);
-        });
-
-        setMedicines(sortedList);
+        setMedicines(myList);
       } catch (error) {
         console.error("Veri çekme hatası:", error);
       }
@@ -55,14 +44,34 @@ function MyInventory() {
     }
   };
 
-  const filteredMedicines = medicines.filter(med => {
-    const matchesSearch = med.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const isExpired = new Date(med.expiryDate) < new Date();
+  const getProcessedMedicines = () => {
+    let filtered = medicines.filter(med => {
+      const matchesSearch = med.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const isExpired = new Date(med.expiryDate) < new Date();
 
-    if (filterType === 'expired') return matchesSearch && isExpired;
-    if (filterType === 'valid') return matchesSearch && !isExpired;
-    return matchesSearch;
-  });
+      if (filterType === 'expired') return matchesSearch && isExpired;
+      if (filterType === 'valid') return matchesSearch && !isExpired;
+      return matchesSearch;
+    });
+
+    // Sıralama Mantığı
+    return filtered.sort((a, b) => {
+      if (sortType === 'name-asc') return a.name.localeCompare(b.name);
+      if (sortType === 'price-asc') return a.price - b.price;
+      if (sortType === 'price-desc') return b.price - a.price;
+      if (sortType === 'expiry-asc') {
+        const isAExpired = new Date(a.expiryDate) < new Date();
+        const isBExpired = new Date(b.expiryDate) < new Date();
+        if (isAExpired && !isBExpired) return -1;
+        if (!isAExpired && isBExpired) return 1;
+        return new Date(a.expiryDate) - new Date(b.expiryDate);
+      }
+      if (sortType === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
+      return 0;
+    });
+  };
+
+  const processedMedicines = getProcessedMedicines();
 
   return (
     <div>
@@ -91,12 +100,23 @@ function MyInventory() {
           <option value="expired">Süresi Dolanlar</option>
           <option value="valid">Süresi Geçmeyenler</option>
         </select>
+
+        <select
+          value={sortType}
+          onChange={(e) => setSortType(e.target.value)}
+          style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ccc', background: 'white' }}>
+          <option value="newest">Sıralama: En Yeni</option>
+          <option value="name-asc">İsim (A-Z)</option>
+          <option value="expiry-asc">Miad (En Yakın)</option>
+          <option value="price-asc">Fiyat (₺ - ⬆️)</option>
+          <option value="price-desc">Fiyat (₺ - ⬇️)</option>
+        </select>
       </div>
 
-      <h3 style={{ color: '#555' }}>📦 Envanterim ({filteredMedicines.length} İlaç)</h3>
+      <h3 style={{ color: '#555' }}>📦 Envanterim ({processedMedicines.length} İlaç)</h3>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-        {filteredMedicines.map((med) => {
+        {processedMedicines.map((med) => {
           const isExpired = new Date(med.expiryDate) < new Date();
           return (
             <div key={med._id} style={{
