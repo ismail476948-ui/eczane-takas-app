@@ -26,7 +26,6 @@ function CurrentAccount() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      // GÜNCELLEME: Localhost silindi
       const [resOrders, resPayments] = await Promise.all([
         axios.get('/api/orders', { headers: { 'x-auth-token': token } }),
         axios.get('/api/payments', { headers: { 'x-auth-token': token } })
@@ -47,7 +46,7 @@ function CurrentAccount() {
     fetchData();
   }, []);
 
-  // --- HESAPLAMA MANTIĞI ---
+  // --- HESAPLAMA MANTIĞI (GÜNCELLEME: SİLİNMİŞ KULLANICI KORUMASI EKLENDİ) ---
   const processTransactions = (orders, payments) => {
     let combined = [];
     let balances = {}; 
@@ -55,9 +54,14 @@ function CurrentAccount() {
     // 1. SİPARİŞLERİ İŞLE
     orders.forEach(order => {
         if (order.status === 'Tamamlandı') {
-            const isSeller = order.seller._id === currentUserId;
+            // HATA DÜZELTME: ?. kullanımı ile silinmiş kullanıcı kontrolü
+            const isSeller = order.seller?._id === currentUserId;
             const partner = isSeller ? order.buyer : order.seller;
             
+            // Eğer partner silindiyse yedek değerler ata
+            const partnerId = partner?._id || "deleted_user";
+            const partnerName = partner?.pharmacyName || '⚠️ Silinmiş Eczane';
+
             let price = order.medicine?.price || 0;
             let qty = order.quantity || 0;
             const amount = price * qty;
@@ -67,46 +71,50 @@ function CurrentAccount() {
                 date: new Date(order.createdAt),
                 type: isSeller ? 'sale' : 'purchase',
                 amount: amount,
-                partnerName: partner?.pharmacyName || 'Bilinmeyen',
-                partnerId: partner?._id,
-                detail: `${order.medicine?.name} (x${qty})`
+                partnerName: partnerName,
+                partnerId: partnerId,
+                detail: `${order.medicine?.name || 'Silinmiş İlaç'} (x${qty})`
             });
 
-            if (!balances[partner._id]) {
-                balances[partner._id] = { name: partner.pharmacyName, balance: 0, income: 0, expense: 0 };
+            if (!balances[partnerId]) {
+                balances[partnerId] = { name: partnerName, balance: 0, income: 0, expense: 0 };
             }
             
             if (isSeller) {
-                balances[partner._id].income += amount;
-                balances[partner._id].balance += amount;
+                balances[partnerId].income += amount;
+                balances[partnerId].balance += amount;
             } else {
-                balances[partner._id].expense += amount;
-                balances[partner._id].balance -= amount;
+                balances[partnerId].expense += amount;
+                balances[partnerId].balance -= amount;
             }
         }
     });
 
     // 2. NAKİT ÖDEMELERİ İŞLE
     payments.forEach(payment => {
-        const isPayer = payment.fromUser._id === currentUserId; 
+        // HATA DÜZELTME: ?. kullanımı ile silinmiş kullanıcı kontrolü
+        const isPayer = payment.fromUser?._id === currentUserId; 
         const partner = isPayer ? payment.toUser : payment.fromUser;
+
+        const partnerId = partner?._id || "deleted_user";
+        const partnerName = partner?.pharmacyName || '⚠️ Silinmiş Eczane';
 
         combined.push({
             _id: payment._id,
             date: new Date(payment.date),
             type: isPayer ? 'payment_sent' : 'payment_received',
             amount: payment.amount,
-            partnerName: partner?.pharmacyName || 'Bilinmeyen',
-            partnerId: partner?._id,
+            partnerName: partnerName,
+            partnerId: partnerId,
             detail: payment.description || 'Nakit İşlem'
         });
 
-        if (!balances[partner._id]) {
-            balances[partner._id] = { name: partner.pharmacyName, balance: 0, income: 0, expense: 0 };
+        if (!balances[partnerId]) {
+            balances[partnerId] = { name: partnerName, balance: 0, income: 0, expense: 0 };
         }
 
-        if (isPayer) balances[partner._id].balance += payment.amount; 
-        else balances[partner._id].balance -= payment.amount;
+        if (isPayer) balances[partnerId].balance += payment.amount; 
+        else balances[partnerId].balance -= payment.amount;
     });
 
     // 3. GENEL ÖZETİ HESAPLA
@@ -131,6 +139,9 @@ function CurrentAccount() {
 
   // --- FONKSİYONLAR ---
   const openPaymentModal = (pharmacyId, pharmacyName) => {
+    // Silinmiş eczaneye ödeme girişi yapılmasını engelle
+    if (pharmacyId === "deleted_user") return toast.warning("Silinmiş eczane için işlem yapılamaz.");
+    
     setSelectedPharmacy({ id: pharmacyId, name: pharmacyName });
     setPaymentForm({ amount: '', type: 'sent', description: '' });
     setShowPaymentModal(true);
@@ -140,7 +151,6 @@ function CurrentAccount() {
     if (!paymentForm.amount || isNaN(paymentForm.amount)) return toast.error("Geçerli bir tutar girin.");
 
     try {
-        // GÜNCELLEME: Localhost silindi
         await axios.post('/api/payments', {
             targetUserId: selectedPharmacy.id,
             amount: parseFloat(paymentForm.amount),
@@ -159,7 +169,6 @@ function CurrentAccount() {
   const handleDeletePayment = async (paymentId) => {
     if(window.confirm("Bu nakit işlem kaydını silmek istediğinize emin misiniz? Bakiye yeniden hesaplanacak.")) {
         try {
-            // GÜNCELLEME: Localhost silindi
             await axios.delete(`/api/payments/${paymentId}`, {
                 headers: { 'x-auth-token': token }
             });
@@ -205,7 +214,7 @@ function CurrentAccount() {
         <div style={cardStyle(summary.netBalance >= 0 ? '#cce5ff' : '#fff3cd', summary.netBalance >= 0 ? '#004085' : '#856404')}>
           <h3>📊 Net Bakiye</h3>
           <p style={{ fontSize: '1.8em', fontWeight: 'bold', margin: '10px 0' }}>
-             {summary.netBalance > 0 ? '+' : ''}{summary.netBalance.toLocaleString()} ₺
+              {summary.netBalance > 0 ? '+' : ''}{summary.netBalance.toLocaleString()} ₺
           </p>
           <p style={{fontSize:'0.8em'}}>{summary.netBalance >= 0 ? 'Genel olarak Alacaklısınız' : 'Genel olarak Borçlusunuz'}</p>
         </div>
@@ -217,7 +226,7 @@ function CurrentAccount() {
         {Object.keys(pharmacyBalances).length === 0 && <p style={{color:'#999'}}>Henüz işlem kaydı yok.</p>}
         {Object.entries(pharmacyBalances).map(([id, data]) => (
             <div key={id} style={{ border: '1px solid #ddd', borderRadius: '10px', padding: '15px', background: 'white', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-                <h4 style={{ margin: '0 0 15px 0', color: '#333', borderBottom:'1px solid #eee', paddingBottom:'5px' }}>{data.name}</h4>
+                <h4 style={{ margin: '0 0 15px 0', color: id === "deleted_user" ? 'red' : '#333', borderBottom:'1px solid #eee', paddingBottom:'5px' }}>{data.name}</h4>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize:'0.9em', color:'#28a745' }}>
                     <span>İlaç Satışım:</span> <span>+{data.income.toLocaleString()} ₺</span>
@@ -237,7 +246,21 @@ function CurrentAccount() {
                         {data.balance > 0 ? '(Alacaklısınız)' : (data.balance < 0 ? '(Borçlusunuz)' : '(Hesap Kapalı)')}
                     </small>
                 </div>
-                <button onClick={() => openPaymentModal(id, data.name)} style={{ width: '100%', padding: '10px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight:'bold' }}>🤝 Hesaplaş / Düzenle</button>
+                <button 
+                  onClick={() => openPaymentModal(id, data.name)} 
+                  disabled={id === "deleted_user"}
+                  style={{ 
+                    width: '100%', 
+                    padding: '10px', 
+                    background: id === "deleted_user" ? '#ccc' : '#007bff', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '5px', 
+                    cursor: id === "deleted_user" ? 'not-allowed' : 'pointer', 
+                    fontWeight:'bold' 
+                  }}>
+                    {id === "deleted_user" ? '⚠️ Silinmiş Eczane' : '🤝 Hesaplaş / Düzenle'}
+                </button>
             </div>
         ))}
       </div>
@@ -271,14 +294,14 @@ function CurrentAccount() {
                 {filteredTransactions.map(t => (
                     <tr key={t._id} style={{ borderBottom: '1px solid #eee' }}>
                         <td style={tdStyle}>{t.date.toLocaleDateString()}</td>
-                        <td style={tdStyle}>{t.partnerName}</td>
+                        <td style={{...tdStyle, color: t.partnerId === "deleted_user" ? 'red' : 'inherit'}}>{t.partnerName}</td>
                         <td style={tdStyle}>{getTypeBadge(t.type)}</td>
                         <td style={tdStyle}>{t.detail}</td>
                         <td style={{ ...tdStyle, fontWeight: 'bold', color: (t.type === 'sale' || t.type === 'payment_sent') ? '#28a745' : '#dc3545' }}>
                              {t.type === 'sale' ? '+' : (t.type === 'purchase' ? '-' : (t.type === 'payment_sent' ? 'Borç Ödendi (+)' : 'Tahsilat (-)'))} {t.amount} ₺
                         </td>
                         <td style={tdStyle}>
-                            {t.type === 'payment_sent' && (
+                            {(t.type === 'payment_sent' || t.type === 'payment_received') && (
                                 <button onClick={() => handleDeletePayment(t._id)} style={{ background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', padding: '5px 10px', cursor: 'pointer', fontSize:'0.9em' }}>🗑 Sil</button>
                             )}
                         </td>
