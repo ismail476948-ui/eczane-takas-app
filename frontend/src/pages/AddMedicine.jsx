@@ -184,7 +184,7 @@ function AddMedicine() {
 
             <div style={{ marginBottom: '20px', flex: 1 }}>
               <label>Birim Fiyat (TL):</label>
-              <input type="number" name="price" placeholder="Örn: 50" onChange={handleChange} required style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ddd' }} />
+              <input type="number" name="price" placeholder="Örn: 50" onChange={handleChange} required min="0" step="0.01" style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ddd' }} />
             </div>
           </div>
 
