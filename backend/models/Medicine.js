@@ -10,6 +10,7 @@ const MedicineSchema = new mongoose.Schema({
 
   condition: { type: String, default: 'Yeni' },
   exchangeWith: { type: String },
+  isDeleted: { type: Boolean, default: false },
 
   createdAt: { type: Date, default: Date.now }
 });

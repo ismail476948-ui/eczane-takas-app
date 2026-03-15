@@ -10,7 +10,7 @@ router.post('/', auth, async (req, res) => {
 
     try {
         const medicine = await Medicine.findById(medicineId).populate('user');
-        if (!medicine) return res.status(404).json({ message: 'İlaç bulunamadı' });
+        if (!medicine || medicine.isDeleted) return res.status(404).json({ message: 'İlaç bulunamadı veya silinmiş' });
 
         if (medicine.user._id.toString() === req.user.id) {
             return res.status(400).json({ message: 'Kendi ilacını alamazsın.' });

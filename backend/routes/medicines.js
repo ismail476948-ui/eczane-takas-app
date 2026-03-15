@@ -31,8 +31,8 @@ router.post('/', auth, async (req, res) => {
 // 2. LİSTELE
 router.get('/', async (req, res) => {
     try {
-        // Stokta olanları getir ve kullanıcı bilgilerini ekle
-        const medicines = await Medicine.find({ quantity: { $gt: 0 } })
+        // Stokta olanları ve silinmemiş olanları getir ve kullanıcı bilgilerini ekle
+        const medicines = await Medicine.find({ quantity: { $gt: 0 }, isDeleted: false })
             .populate('user', ['username', 'pharmacyName', 'city']);
         res.json(medicines);
     } catch (err) {
@@ -57,7 +57,8 @@ router.delete('/:id', auth, async (req, res) => {
         const isAdmin = currentUser && currentUser.isAdmin;
 
         if (isOwner || isAdmin) {
-            await Medicine.findByIdAndDelete(req.params.id);
+            // Soft delete: isDeleted alanını true yap
+            await Medicine.findByIdAndUpdate(req.params.id, { isDeleted: true });
             return res.json({ msg: 'İlaç başarıyla silindi' });
         } else {
             return res.status(401).json({ msg: 'Bu ilacı silmek için yetkiniz yok' });
