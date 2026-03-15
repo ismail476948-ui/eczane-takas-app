@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
 router.get('/me', auth, async (req, res) => {
     try {
         console.log("BENIM İLAÇLARIM ENDPOINTINE ISTEK GELDI! User ID:", req.user.id);
-        const medicines = await Medicine.find({ user: req.user.id, isDeleted: { $ne: true } })
+        const medicines = await Medicine.find({ user: req.user.id, isDeleted: { $ne: true }, quantity: { $gt: 0 } })
             .populate('user', ['username', 'pharmacyName', 'city']);
         
         console.log("Dönen ilaç sayısı:", medicines.length);
