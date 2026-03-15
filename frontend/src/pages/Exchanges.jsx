@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
+import EmojiPicker from 'emoji-picker-react';
 
 // Socket bağlantısı
 const socket = io.connect();
@@ -30,6 +31,8 @@ function Exchanges({ onPageLoad }) {
   const [chatPartnerName, setChatPartnerName] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef(null); // Tıklama dışı kapanma için ref
 
   const token = localStorage.getItem('token');
   const currentUserId = localStorage.getItem('userId');
@@ -70,8 +73,17 @@ function Exchanges({ onPageLoad }) {
         fetchData(); 
     });
 
+    // Dışarı tıklandığında emoji picker'ı kapat
+    const handleClickOutside = (event) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+
     return () => {
         socket.off("receive_message");
+        document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []); 
 
@@ -144,6 +156,10 @@ function Exchanges({ onPageLoad }) {
         alert("Mesaj gönderilemedi.");
         console.error(error);
     }
+  };
+
+  const handleEmojiClick = (emojiObject) => {
+      setNewMessage(prevMsg => prevMsg + emojiObject.emoji);
   };
 
   // --- KAREKOD İŞLEMLERİ ---
@@ -333,7 +349,25 @@ function Exchanges({ onPageLoad }) {
                 </div>
 
                 {/* INPUT AREA */}
-                <div style={{ padding: '10px', background: 'white', borderTop: '1px solid #ddd', display: 'flex', gap: '10px' }}>
+                <div style={{ padding: '10px', background: 'white', borderTop: '1px solid #ddd', display: 'flex', gap: '10px', position: 'relative' }}>
+                    
+                    {/* EMOJI PICKER BAŞLANGICI */}
+                    <div ref={emojiPickerRef} style={{ position: 'relative' }}>
+                        <button 
+                            onClick={() => setShowEmojiPicker(prev => !prev)} 
+                            style={{ background: 'transparent', border: 'none', fontSize: '1.5em', cursor: 'pointer', padding: '5px' }}
+                        >
+                            😀
+                        </button>
+                        
+                        {showEmojiPicker && (
+                            <div style={{ position: 'absolute', bottom: '50px', left: '0', zIndex: 9999 }}>
+                                <EmojiPicker onEmojiClick={handleEmojiClick} searchDisabled={true} skinTonesDisabled={true} />
+                            </div>
+                        )}
+                    </div>
+                    {/* EMOJI PICKER BİTİŞİ */}
+
                     <input 
                         type="text" 
                         value={newMessage} 
