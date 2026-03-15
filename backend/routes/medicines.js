@@ -28,11 +28,29 @@ router.post('/', auth, async (req, res) => {
     }
 });
 
-// 2. LİSTELE
+// 2. LİSTELE (Genel, stokta olanlar ve silinmeyenler)
 router.get('/', async (req, res) => {
     try {
-        // Stokta olanları ve silinmemiş olanları getir ve kullanıcı bilgilerini ekle
         const medicines = await Medicine.find({ quantity: { $gt: 0 }, isDeleted: false })
+            .populate('user', ['username', 'pharmacyName', 'city']);
+        res.json(medicines);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Sunucu Hatası');
+    }
+});
+
+// 2.5 KENDİ İLAÇLARIMI GETİR (Silinmiş olsun veya olmasın, quantity>0 önemsiz, tüm envanter geçmişi)
+router.get('/me', auth, async (req, res) => {
+    try {
+        // Kullanıcının kendi eklediği tüm ilaçları getirir (silinmiş veya quantity 0 olsa bile)
+        // Eğer silinenleri de envanter formunda listelemek istersen isDeleted filtresi koymazsın
+        // Ama "Envanter" ekranında sadece şu an sahip olduklarını (veya bitenleri) göstermek,
+        // silinenleri gizlemek ama *Takaslarda* görünmesini istersen isDeleted: false koymalıyız.
+        // Kullanıcı "ö-n-c-e-k-i ilaçları gözükmüyor" dediği için isDeleted: false yaparak
+        // ve quantity'si sıfır olan geçmiş ilaçları göstermemiz gerekiyor olabilir.
+        // Asıl sorun: frontend GET /api/medicines e endpoint atıyor ve orada quantity > 0 ve isDeleted: false şartı var.
+        const medicines = await Medicine.find({ user: req.user.id, isDeleted: false })
             .populate('user', ['username', 'pharmacyName', 'city']);
         res.json(medicines);
     } catch (err) {

@@ -18,12 +18,10 @@ function MyInventory() {
     }
     const fetchMyMedicines = async () => {
       try {
-        const res = await axios.get('/api/medicines');
-        const myList = res.data.filter(med => {
-          const ownerId = med.user?._id || med.user;
-          return ownerId === currentUserId;
+        const res = await axios.get('/api/medicines/me', {
+          headers: { 'x-auth-token': token }
         });
-        setMedicines(myList);
+        setMedicines(res.data);
       } catch (error) {
         console.error("Veri çekme hatası:", error);
       }
